@@ -138,3 +138,21 @@ changes nothing above the configuration layer.
 
 One tool across all three containers, lockfile committed. Rejected: pip plus venv
 per service (slower, and three slightly different setups by Saturday).
+
+---
+
+## D10 — 2026-09-18 — Accepted
+**Python 3.12 across the workspace, pinned at the repo root.**
+
+The three services and the devcontainer image already said 3.12, but the workspace root
+had no `.python-version`, so `uv sync` at the root built the venv from whatever the
+machine's default interpreter was — 3.14 on one of ours. Local runs and container builds
+were on different interpreters.
+
+Rejected: moving everything to 3.14. It is the better interpreter, but the bump touches
+the devcontainer image, `requires-python` and ruff's `target-version`, and it buys us
+nothing this weekend.
+
+*Cost:* we are a release behind, and a 3.13+ idiom someone copies from a docs page will
+work in their editor and fail in the container. The pin is one file to change when we
+want the bump.

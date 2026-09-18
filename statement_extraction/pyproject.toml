@@ -1,0 +1,13 @@
+[project]
+name = "statement-extraction"
+version = "0.1.0"
+description = "Offline statement extraction service"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.141.1",
+    "uvicorn[standard]>=0.53.0",
+]
+
+[tool.fastapi]
+entrypoint = "src.app.main:app"
