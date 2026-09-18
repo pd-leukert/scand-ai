@@ -282,3 +282,38 @@ obvious speech-recognition slip in a span. We accept that, because a missing sta
 speaker and timestamp lines between the words of a turn, so the matcher has to normalise
 across them — fiddly, and the first thing to test. We also keep both a `claim` and a `span`,
 so deletion has two free-text fields to sweep, not one.
+
+---
+
+## D16 — 2026-09-19 — Accepted
+**Documents are parsed into speaker turns and messages; a statement lies within one; speakers the file does not name stay unnamed.**
+
+`statement_extraction/src/app/documents.py` turns each file into units — one speaker turn in
+a transcript, one message in an email or report thread — and every line keeps its number
+in the source file. A statement's span has to lie inside one unit, so its actor is never
+ambiguous. Positions are what a judge can find by eye: the elapsed time written on the
+transcript segment (`1 minute 27 seconds`), `message n of N` counted from the top, and
+`line n` in the `INTERNAL` transcripts, which have no timestamps. Parsing fails loudly on
+anything it does not recognise, including a thread whose header count disagrees with the
+messages found.
+
+The corpus has speakers the file does not name: `Unknown Speaker`, `Guest 1` (13 turns in the
+data-protection review) and a dial-in phone number. They get no name, and the label is kept
+as written. One named speaker is spelled `Henrik Sorensen` in two turns of a transcript
+whose attendee list says `Henrik Sørensen`; the parser keeps it as written.
+
+Rejected:
+- *Fixed-size word chunks with position tags the model copies.* They cut across speaker
+  changes, so a statement can straddle two people and take the wrong actor.
+- *Guessing who `Guest 1` is.* In the data-protection review it is probably the data
+  protection officer, but the file does not say, and we would rather report unknown than
+  guess (see the roadmap's honest limits).
+- *Merging `Henrik Sorensen` into `Henrik Sørensen` in the parser.* That is alias
+  resolution, which is a person registry's job (roadmap, item 3), and doing it silently in
+  one place would hide the problem from deletion.
+
+*Cost:* a backchannel from someone else ("Mm-hm.") splits one speaker's sentence into two
+units, and each half is extracted separately or missed. Units are also small, so extraction
+has to batch several per model call while keeping their identity. And the spelling variant
+is a warning for deletion: a sweep for `Sørensen` misses `Sorensen`, and names also appear
+in email addresses and signature phone numbers.

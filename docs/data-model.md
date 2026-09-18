@@ -97,15 +97,17 @@ Rules the layout encodes:
   computed by finding the span in the source text, never taken from the model. A span that
   is not found verbatim (whitespace-normalised) drops the statement, which is logged. No
   match means no citation, not an approximate one.
-- **`position` is what a judge can see in the file.** Transcripts: the turn's timestamp.
+- **`position` is what a judge can see in the file.** Transcripts: the elapsed time on the segment line, as written (`1 minute 27 seconds`).
   Emails and reports: "message n of N", counted from the top of the file, so it can be
   checked by eye against the `Messages in thread` header. The three `INTERNAL`
   transcripts have no timestamps, so they use the line range only.
 - **`org` and `role` come from the document itself** — the attendee list, the header or the
   signature — and are `null` when the document does not say. Never from another document,
   and never from the model's own knowledge. This is what makes them role-as-of-then.
-- **`INTERNAL` transcripts** record speakers as `Me` / `Them`, so `actor.name` is `null` and
-  `actor.label` holds the label. The real speaker is not recoverable and we do not guess.
+- **Speakers the file does not name** get `actor.name` `null` and `actor.label` holding what
+  the file says: `Me` / `Them` in the `INTERNAL` transcripts, and `Unknown Speaker`,
+  `Guest 1` or a dial-in number in some Teams transcripts. The real speaker is not
+  recoverable and we do not guess.
 - **`agreed_by` empty means no agreement is recorded**, which is a valid and useful answer.
 - **`claim` is a one-sentence restatement**, kept beside the verbatim `span` so the
   answering model has the context that pronouns in the span lack.
@@ -114,4 +116,6 @@ Rules the layout encodes:
 - **No status and no links** between statements (D4).
 
 Deletion has to sweep every string field a name can sit in: `actor.name`,
-`agreed_by[].name`, `span` and `claim`.
+`agreed_by[].name`, `span` and `claim`. A name is not always written as the attendee list
+spells it: the corpus has `Henrik Sorensen` for `Henrik Sørensen`, and people also appear as
+email addresses (`k.boateng@…`) and as phone numbers in signatures.
