@@ -225,3 +225,31 @@ agreement forbids, and an unused service that pulls multi-gigabyte weights slows
 *Cost:* `compose.yaml` and the architecture diagram disagree until extraction actually
 calls a model. Whoever adds inference adds the Ollama service and its `OLLAMA_HOST`
 configuration in the same change.
+
+---
+
+## D14 — 2026-09-19 — Accepted
+**Commercial model APIs are for development only; everything that ships is produced locally.**
+
+The RELEX-provided API key may be used for brainstorming, coding, and iterating on the
+extraction prompt and parser against the corpus. The corpus is synthetic, so nothing
+sensitive leaves. What is deployed on Verda — the extraction run whose output becomes the
+statements file, and the answering path — uses local Ollama only. Which endpoint and model
+each stage calls is configuration, so moving between them is a config change, not a code
+change.
+
+This narrows D8 and the working agreement's "no external model APIs" rather than
+contradicting them: both still hold for the shipped system.
+
+Rejected:
+- *Shipping a statements file extracted with a commercial model.* The claim we want to make
+  in the demo — everything is processed locally, on our private cloud — would be false of
+  the very artifact the judges use.
+- *Keeping the ban absolute during development.* It ties prompt and parser iteration to the
+  speed of one VM (D8's own cost) for a corpus where nothing is at stake.
+
+*Cost:* prompts tuned against a commercial model may not transfer, and a small local model
+may extract noticeably worse — which we learn late unless we test early. The final
+extraction run has to be Ollama on Verda and be checked against the practice questions
+before anyone relies on it. The commercial key must never reach a deployed image or the
+compose file.

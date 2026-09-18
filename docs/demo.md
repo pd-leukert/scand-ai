@@ -11,6 +11,9 @@ themselves, then a live question session where they check our citations by hand.
 - Extraction has been run, the statements file is in place, and the backend has been
   restarted against it.
 - Someone who did not build it has asked it three questions end to end.
+- Our answers to the organisers' nine practice questions are submitted with the entry, each
+  with citations (the document, plus a position in the conversation for transcripts). Two of
+  them have no clean answer in the archive; saying so, and why, is the right answer.
 
 ## The order we show things
 

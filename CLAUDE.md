@@ -5,7 +5,7 @@ For everyone working in this repo, human or coding agent. Short on purpose. Read
 
 ## What we are building
 
-An agent that answers questions about a year of rollout documents and can show its
+An agent that answers questions about two years of rollout documents and can show its
 receipts. Read [README.md](README.md) and [docs/challenge.md](docs/challenge.md) first —
 most design questions are already answered there, and the rubric is what decides ties.
 

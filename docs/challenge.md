@@ -18,8 +18,8 @@ scores better than a confident claim that falls over on the second question.
 
 ## The setup
 
-- **45 documents**: transcripts, email threads, status reports, spanning a year of a
-  rollout.
+- **45 documents**: transcripts, email threads, status reports, spanning March 2024 to
+  July 2026 — from the first sales demo to the second year of live service.
 - **People have changed jobs.** Roles are not stable across the corpus. Someone who was a
   consultant in March may be a customer employee in October, or gone entirely.
 - **The failure mode to avoid**: a clean summary that is wrong. Three named symptoms —

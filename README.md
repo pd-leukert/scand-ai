@@ -4,7 +4,7 @@ Team **scand-ai** · RELEX Solutions challenge track · AaltoAI Hackathon 2026
 
 ## The problem in one paragraph
 
-A year into a rollout, nobody agrees on what was decided. There are 45 documents —
+Two years into a rollout, nobody agrees on what was decided. There are 45 documents —
 transcripts, email threads, status reports — and the people who were in the room have
 changed jobs. Ask a normal AI assistant to "summarise what was agreed" and you get a
 clean, confident, wrong answer: a reversed decision reported as current, a consultant's
