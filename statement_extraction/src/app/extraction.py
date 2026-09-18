@@ -1,0 +1,160 @@
+from collections import Counter
+from collections.abc import Callable
+
+from .documents import Document, Unit
+from .matching import find_span
+
+ACTS = ["proposal", "agreement", "decision", "report", "question", "objection"]
+
+SCHEMA = {
+    "type": "object",
+    "properties": {
+        "statements": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "unit": {"type": "integer"},
+                    "span": {"type": "string"},
+                    "claim": {"type": "string"},
+                    "act": {"type": "string", "enum": ACTS},
+                    "agreed_by": {"type": "array", "items": {"type": "string"}},
+                    "org": {"type": ["string", "null"]},
+                    "role": {"type": ["string", "null"]},
+                },
+                "required": ["unit", "span", "claim", "act", "agreed_by", "org", "role"],
+            },
+        }
+    },
+    "required": ["statements"],
+}
+
+SYSTEM_PROMPT = """\
+You extract statements from one document of a project record. A statement is one thing one \
+person asserted, proposed, agreed to, decided, asked, objected to or reported.
+
+The document is a list of numbered units. Each unit is one speaker's turn or one email message.
+
+For every statement, return:
+- unit: the number of the unit the statement is in.
+- span: the words of the statement, copied exactly from that one unit, character for character. \
+Never fix, shorten, complete, paraphrase or join text. If a sentence is cut off, or a number is \
+incomplete, quote it cut off. Do not finish it.
+- claim: one plain sentence saying what was stated. Say only what the span says. Use names as \
+written.
+- act: proposal (someone floats an idea or asks for something), agreement (someone accepts a \
+proposal), decision (something is settled), report (a fact or status is given), question, \
+or objection. An idea floated by one side is a proposal even if it sounds firm. Only call \
+something a decision or agreement if the words show it was settled.
+- agreed_by: the names of the people who explicitly agreed to this statement in this document. \
+An empty list if nobody did. Silence is not agreement.
+- org and role: the speaker's organisation and job title, only if the document states them in \
+the attendee list or a signature. Copy the words. Otherwise null.
+
+Use only the text you are given. Do not use anything you know from elsewhere. Skip greetings, \
+filler and small talk. If the text contains no statements, return an empty list.\
+"""
+
+# One chat call: messages in, the parsed JSON answer out.
+Chat = Callable[[list[dict[str, str]]], dict]
+
+
+def extract_document(
+    doc: Document, chat: Chat, batch_words: int
+) -> tuple[list[dict], Counter[str]]:
+    """Statements for one document, and how many the model returned that we threw away."""
+    records: list[dict] = []
+    dropped: Counter[str] = Counter()
+    seen: set[tuple[int, str]] = set()
+    speakers = {unit.name for unit in doc.units if unit.name} | set(doc.attendees)
+    header = _header(doc)
+    for batch in _batches(doc.units, batch_words):
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": header + _render(doc, batch)},
+        ]
+        for item in chat(messages)["statements"]:
+            unit_no, claim = item["unit"], item["claim"].strip()
+            if unit_no not in batch:
+                dropped["unit not in this batch"] += 1
+                continue
+            unit = doc.units[unit_no - 1]
+            match = find_span(unit, item["span"])
+            if match is None:
+                dropped["span not in the unit"] += 1
+                continue
+            if not claim or item["act"] not in ACTS:
+                dropped["no claim or unknown act"] += 1
+                continue
+            if (unit_no, match.text) in seen:
+                dropped["duplicate"] += 1
+                continue
+            seen.add((unit_no, match.text))
+            context = _flat(header + " ".join(line.text for line in unit.lines))
+            records.append(
+                {
+                    "id": f"{doc.doc_id}#{len(records) + 1}",
+                    "doc_id": doc.doc_id,
+                    "doc_type": doc.doc_type,
+                    "doc_date": doc.doc_date,
+                    "stated_on": unit.sent or doc.doc_date,
+                    "position": match.position,
+                    "lines": [match.first_line, match.last_line],
+                    "span": match.text,
+                    "claim": claim,
+                    "act": item["act"],
+                    "actor": {
+                        "name": unit.name,
+                        "label": unit.label,
+                        "org": _stated(item["org"], context),
+                        "role": _stated(item["role"], context),
+                    },
+                    "agreed_by": [name for name in item["agreed_by"] if name in speakers],
+                }
+            )
+    return records, dropped
+
+
+def _batches(units: list[Unit], batch_words: int) -> list[range]:
+    """Consecutive runs of unit numbers (1-based), each about batch_words long."""
+    batches: list[range] = []
+    start, words = 1, 0
+    for number, unit in enumerate(units, 1):
+        size = sum(len(line.text.split()) for line in unit.lines)
+        if words and words + size > batch_words:
+            batches.append(range(start, number))
+            start, words = number, 0
+        words += size
+    batches.append(range(start, len(units) + 1))
+    return batches
+
+
+def _header(doc: Document) -> str:
+    lines = [f"Document: {doc.doc_id}", f"Kind: {doc.doc_type}", f"Date: {doc.doc_date}"]
+    if doc.attendees:
+        people = [f"{name} ({note})" if note else name for name, note in doc.attendees.items()]
+        lines.append("Attendees: " + ", ".join(people))
+    return "\n".join(lines) + "\n\n"
+
+
+def _render(doc: Document, batch: range) -> str:
+    parts = []
+    for number in batch:
+        unit = doc.units[number - 1]
+        who = unit.name or f"{unit.label} (name not recorded)"
+        sent = f", sent {unit.sent}" if unit.sent else ""
+        where = unit.lines[0].position
+        text = "\n".join(line.text for line in unit.lines)
+        parts.append(f"[{number}] {who} - {where}{sent}\n{text}")
+    return "\n\n".join(parts)
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def _stated(value: str | None, context: str) -> str | None:
+    """Keep an organisation or role only if the document's own words contain it."""
+    if value and _flat(value) and _flat(value) in context:
+        return " ".join(value.split())
+    return None

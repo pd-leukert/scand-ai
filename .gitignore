@@ -219,3 +219,7 @@ __marimo__/
 
 # Source corpus (synthetic Acme archive): kept out of git, stored on Verda
 corpus/
+
+# The derived statements file from a local run, never committed (D12)
+statements.jsonl
+statements.jsonl.tmp

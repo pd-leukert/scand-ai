@@ -1,0 +1,48 @@
+# Real extraction, layered over compose.yaml:
+#   docker compose -f compose.yaml -f compose.extraction.yaml up
+# On a machine with an NVIDIA GPU, add: -f compose.gpu.yaml
+# The model comes from EXTRACTION_MODEL in the environment or a .env file. The source archive
+# goes in ./corpus next to this file. See docs/decisions.md D18.
+services:
+  # The model host. Reachable from the compose network only.
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama:/root/.ollama
+    expose:
+      - "11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # Downloads the configured model into the ollama volume, then exits.
+  ollama-pull:
+    image: ollama/ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "${EXTRACTION_MODEL:-}"]
+    restart: "no"
+
+  statement-extraction:
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+    command: ["uv", "run", "--frozen", "python", "-m", "src.app.extract"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      EXTRACTION_MODEL: ${EXTRACTION_MODEL:-}
+      CORPUS_DIR: /corpus
+      STATEMENTS_PATH: /data/statements.jsonl
+    volumes:
+      - ./corpus:/corpus:ro
+
+volumes:
+  # Downloaded model weights. They survive `docker compose down`.
+  ollama:

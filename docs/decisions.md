@@ -207,7 +207,7 @@ before then. The escape hatch for a backend-only restart is
 
 ---
 
-## D13 — 2026-09-18 — Accepted
+## D13 — 2026-09-18 — Accepted; partly superseded by D18
 **The first compose file has three services: no Ollama, and no document mount.**
 
 Ollama is in [architecture.md](architecture.md) as a fourth container and is deliberately
@@ -345,3 +345,42 @@ or leaves out a word inside the span, so recall depends on how well the prompt g
 to copy exactly — unmeasured until extraction runs. A repeated line inside one unit gets the
 first line number, which may not be the one the model meant. And the matcher proves the words
 are there, not that they support the claim; that stays a prompt and review problem.
+
+---
+
+## D18 — 2026-09-19 — Accepted
+**Extraction calls Ollama over HTTP; Ollama and the real job are wired in separate compose layers until the job has run once. Partly supersedes D13.**
+
+`statement_extraction/src/app/extract.py` posts to Ollama's `/api/chat` with `httpx`, which the
+service already has, asking for JSON that matches a schema, at temperature 0. The model, host,
+context size and batch size come from the environment; `EXTRACTION_MODEL` has no default
+(D14). The model is asked for a unit number, a span, a claim, an act, who agreed, and the
+speaker's organisation and role — and nothing else. The actor is taken from the unit by code.
+An organisation or role is kept only if those words are in the attendee list or the unit, and
+`agreed_by` keeps only people who appear in the document. Units are batched by a word budget
+and never split, which refines D1: still one document at a time, in several calls when it is
+long.
+
+The Ollama service, the model download, the corpus mount and the real command are in
+`compose.extraction.yaml`; the GPU reservation is in `compose.gpu.yaml`. `compose.yaml` is
+unchanged. There is no cache of model output, a failed call fails the job, and the statements
+file is written whole or not at all. Statements thrown away are counted by reason on stdout and
+not stored.
+
+Rejected:
+- *The `ollama` Python package.* A dependency for one POST request.
+- *Ollama in the base `compose.yaml` now.* Anyone running `docker compose up` to work on the
+  frontend would wait on a model download and a corpus they do not have, and be blocked.
+- *Asking the model for the actor, the position or the line numbers.* It cannot be trusted to
+  copy them; code has them (D15, D16, D17).
+- *Retrying failed calls, or caching output per document.* Retries hide a flaky run, and a cache
+  is a second derived artifact that deletion would have to reach (working agreement, rule 4).
+- *Storing the rejected model output for inspection.* It would hold names the redaction never
+  sees.
+
+*Cost:* three compose files to remember, until the job has run for real and the layers fold into
+`compose.yaml` and the placeholder command goes. The Dockerfile still defaults
+`STATEMENTS_PATH` to `statements.json` while the layer sets `.jsonl`. The `./corpus` bind mount
+is our choice while D13's "external shared storage" is still undefined. A call that fails late
+loses the run, with no resume. And the prompt has not met a real model yet, so recall and the
+share of statements thrown away are both unknown.

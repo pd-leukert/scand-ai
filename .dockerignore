@@ -10,6 +10,6 @@ __pycache__
 .devcontainer
 docs
 corpus
-compose.yaml
+compose*.yaml
 **/Dockerfile
 .dockerignore

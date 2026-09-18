@@ -1,0 +1,14 @@
+# Layer this over compose.extraction.yaml on a machine with an NVIDIA GPU and the NVIDIA
+# container toolkit:
+#   docker compose -f compose.yaml -f compose.extraction.yaml -f compose.gpu.yaml up
+# It is a separate file because compose refuses to start a container that asks for a GPU the
+# machine does not have, which would break every laptop.
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
