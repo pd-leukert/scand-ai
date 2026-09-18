@@ -112,7 +112,7 @@ different question set than the practice one.
 
 ---
 
-## D7 — 2026-09-18 — Accepted
+## D7 — 2026-09-18 — Accepted; partly superseded by D15
 **No technical specifications until the dataset is in hand.**
 
 No JSON schema, no endpoint definitions, no file layouts written down yet. The shape of
@@ -253,3 +253,32 @@ may extract noticeably worse — which we learn late unless we test early. The f
 extraction run has to be Ollama on Verda and be checked against the practice questions
 before anyone relies on it. The commercial key must never reach a deployed image or the
 compose file.
+
+---
+
+## D15 — 2026-09-19 — Accepted
+**The statement record layout is drafted from the real documents; locations are computed by code, not by the model. Partly supersedes D7.**
+
+D7 held back all schemas until the dataset was in hand. It is now: 45 plain `.txt` files,
+23 transcripts, 20 email threads and 2 report threads. The record layout for extraction is
+in [data-model.md](data-model.md). Endpoints and the backend API stay unspecified.
+
+The model returns only the verbatim span. Code finds that span in the source text and
+derives the line range and the human-readable position (a transcript timestamp, or
+"message n of N" counted from the top of the file). A span that is not found verbatim drops
+the statement rather than being cited approximately.
+
+Rejected:
+- *The model copies a position tag from the chunk, and we check the tag occurs in the
+  source.* That check passes for a tag that belongs to a different passage. It verifies the
+  tag exists, not that it points at the claim, and a real-looking wrong citation is the
+  failure the judges look for.
+- *Numbering email messages chronologically.* It disagrees with the file, which is in
+  reverse order, so a judge cannot check it by eye.
+
+*Cost:* extraction recall drops whenever the model tidies whitespace or corrects an
+obvious speech-recognition slip in a span. We accept that, because a missing statement surfaces as
+"the record does not say" while a bad citation costs marks. Teams transcripts interleave
+speaker and timestamp lines between the words of a turn, so the matcher has to normalise
+across them — fiddly, and the first thing to test. We also keep both a `claim` and a `span`,
+so deletion has two free-text fields to sweep, not one.

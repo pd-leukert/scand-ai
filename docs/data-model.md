@@ -1,8 +1,8 @@
 # What a statement records
 
 Conceptual only. This is the list of things we decided every statement must carry, and the
-reasoning behind each one. It is **not a schema** — field names, types and structure get
-fixed once we have seen the real documents, and this page gets updated then.
+reasoning behind each one. The conceptual list comes first; the draft record layout,
+written after reading the real documents, is at the end (see [decisions.md](decisions.md), D15).
 
 ## The unit
 
@@ -68,3 +68,50 @@ the citation — the one place we are guaranteed to show the judge.
 
 See [decisions.md](decisions.md) D3 for what we replace names with, and
 [roadmap.md](roadmap.md) for the residual risk we are accepting.
+
+## Draft record layout
+
+The statements file is JSONL, one statement per line. Draft: expect it to move after the
+first extraction run. Example, from `emails/07_op-id-field-exclusion.txt`:
+
+```json
+{
+  "id": "emails/07_op-id-field-exclusion#3",
+  "doc_id": "emails/07_op-id-field-exclusion",
+  "doc_type": "email",
+  "doc_date": "2025-11-24",
+  "stated_on": "2025-11-24",
+  "position": "message 2 of 4",
+  "lines": [40, 40],
+  "span": "I can purge the landing zone. I cannot purge the attachments.",
+  "claim": "Kwame Boateng can purge OP_ID from the landing zone but not from the emailed attachments.",
+  "act": "report",
+  "actor": {"name": "Kwame Boateng", "org": "RELEX", "role": "Technical Consultant", "label": null},
+  "agreed_by": []
+}
+```
+
+Rules the layout encodes:
+
+- **The model returns the span; code derives the location.** `lines` and `position` are
+  computed by finding the span in the source text, never taken from the model. A span that
+  is not found verbatim (whitespace-normalised) drops the statement, which is logged. No
+  match means no citation, not an approximate one.
+- **`position` is what a judge can see in the file.** Transcripts: the turn's timestamp.
+  Emails and reports: "message n of N", counted from the top of the file, so it can be
+  checked by eye against the `Messages in thread` header. The three `INTERNAL`
+  transcripts have no timestamps, so they use the line range only.
+- **`org` and `role` come from the document itself** — the attendee list, the header or the
+  signature — and are `null` when the document does not say. Never from another document,
+  and never from the model's own knowledge. This is what makes them role-as-of-then.
+- **`INTERNAL` transcripts** record speakers as `Me` / `Them`, so `actor.name` is `null` and
+  `actor.label` holds the label. The real speaker is not recoverable and we do not guess.
+- **`agreed_by` empty means no agreement is recorded**, which is a valid and useful answer.
+- **`claim` is a one-sentence restatement**, kept beside the verbatim `span` so the
+  answering model has the context that pronouns in the span lack.
+- **Dates are ISO 8601.** Source formats differ: reports use `06-04-2026` for 6 April and
+  email headers use `Monday, November 24, 2025`. Code parses them, not the model.
+- **No status and no links** between statements (D4).
+
+Deletion has to sweep every string field a name can sit in: `actor.name`,
+`agreed_by[].name`, `span` and `claim`.
