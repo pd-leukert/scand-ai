@@ -1,3 +1,13 @@
+[project]
+name = "scand-ai"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.13",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -13,3 +23,8 @@ select = [
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.uv.workspace]
+members = [
+    "backend",
+]
