@@ -1,0 +1,58 @@
+name: scand-ai
+
+services:
+  # A job, not a service: it runs once, writes the statements file, and exits 0. Nothing
+  # else starts until it has. See docs/decisions.md D12.
+  statement-extraction:
+    build:
+      context: .
+      dockerfile: statement_extraction/Dockerfile
+    volumes:
+      - statements:/data
+    # Never restart a job that has finished.
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      statement-extraction:
+        condition: service_completed_successfully
+    volumes:
+      # Read-only: extraction is the only writer of the derived artifact.
+      - statements:/data:ro
+    # Deliberately not published — the backend is reachable from the compose network only.
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - /app/.venv/bin/python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://localhost:8000/health")
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      # The extraction dependency is implied through the backend, but stating it here keeps
+      # the rule readable without tracing it.
+      statement-extraction:
+        condition: service_completed_successfully
+      backend:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+volumes:
+  # The statements file: written once by extraction, read by the backend. One derived
+  # artifact, one place it lives.
+  statements:
