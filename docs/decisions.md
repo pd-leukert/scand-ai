@@ -317,3 +317,31 @@ units, and each half is extracted separately or missed. Units are also small, so
 has to batch several per model call while keeping their identity. And the spelling variant
 is a warning for deletion: a sweep for `Sørensen` misses `Sorensen`, and names also appear
 in email addresses and signature phone numbers.
+
+---
+
+## D17 — 2026-09-19 — Accepted
+**A quoted span must appear in the unit it is attributed to, and the stored span is the source's own text.**
+
+`find_span` in `statement_extraction/src/app/matching.py` takes a unit and the span the model
+claims to quote, and returns the file line range, the position and the matched text — or
+nothing. Only whitespace and Unicode composition may differ: a line break inside a turn, a
+doubled space, an accented letter written as two characters. The record stores the text as
+it stands in the source, never the model's copy. A quote that starts or ends inside a word or
+a number does not match, so `3` is not found in `3.4`. The model names the unit it quoted, and
+the search runs only inside that unit. The same text twice in one unit gives the first
+occurrence.
+
+Rejected:
+- *Fuzzy matching, or accepting a near match above a threshold.* It lets a corrected number
+  or a completed sentence through, which is the invented-source failure the brief warns about.
+- *Folding quotes and dashes.* The corpus has no curly quotes and no non-breaking spaces, and
+  five em dashes, so it would be code for a case that does not occur.
+- *Searching the whole document for the span.* A short span such as "Yeah." lands on the wrong
+  turn and cites the wrong speaker.
+
+*Cost:* a statement is dropped whenever the model rewords, tidies a speech-recognition slip,
+or leaves out a word inside the span, so recall depends on how well the prompt gets the model
+to copy exactly — unmeasured until extraction runs. A repeated line inside one unit gets the
+first line number, which may not be the one the model meant. And the matcher proves the words
+are there, not that they support the claim; that stays a prompt and review problem.

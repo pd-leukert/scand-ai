@@ -96,7 +96,8 @@ Rules the layout encodes:
 - **The model returns the span; code derives the location.** `lines` and `position` are
   computed by finding the span in the source text, never taken from the model. A span that
   is not found verbatim (whitespace-normalised) drops the statement, which is logged. No
-  match means no citation, not an approximate one.
+  match means no citation, not an approximate one. The stored `span` is the source's own
+  text, not the model's copy (D17).
 - **`position` is what a judge can see in the file.** Transcripts: the elapsed time on the segment line, as written (`1 minute 27 seconds`).
   Emails and reports: "message n of N", counted from the top of the file, so it can be
   checked by eye against the `Messages in thread` header. The three `INTERNAL`
