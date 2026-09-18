@@ -28,4 +28,5 @@ indent-style = "space"
 members = [
     "backend",
     "frontend",
+    "statement_extraction",
 ]
