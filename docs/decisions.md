@@ -352,7 +352,8 @@ are there, not that they support the claim; that stays a prompt and review probl
 **Extraction calls Ollama over HTTP; Ollama and the real job are wired in separate compose layers until the job has run once. Partly supersedes D13.**
 
 `statement_extraction/src/app/extract.py` posts to Ollama's `/api/chat` with `httpx`, which the
-service already has, asking for JSON that matches a schema, at temperature 0. The model, host,
+service already has, asking for JSON that matches a schema, at temperature 0 and with thinking off (a thinking
+model can spend its whole budget reasoning and return nothing, as the 0.8B one did). The model, host,
 context size and batch size come from the environment; `EXTRACTION_MODEL` has no default
 (D14). The model is asked for a unit number, a span, a claim, an act, who agreed, and the
 speaker's organisation and role — and nothing else. The actor is taken from the unit by code.

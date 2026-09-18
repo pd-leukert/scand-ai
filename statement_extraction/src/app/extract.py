@@ -22,6 +22,9 @@ def _ollama_chat(client: httpx.Client, model: str, num_ctx: int) -> Chat:
                 "model": model,
                 "messages": messages,
                 "stream": False,
+                # Copying is not a reasoning task, and a thinking model can spend its whole
+                # budget thinking and return nothing.
+                "think": False,
                 "format": SCHEMA,
                 "options": {"temperature": 0, "num_ctx": num_ctx},
             },
