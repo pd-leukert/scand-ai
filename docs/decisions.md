@@ -156,3 +156,72 @@ nothing this weekend.
 *Cost:* we are a release behind, and a 3.13+ idiom someone copies from a docs page will
 work in their editor and fail in the container. The pin is one file to change when we
 want the bump.
+
+---
+
+## D11 — 2026-09-18 — Accepted
+**One Dockerfile per service, but every image builds from the repository root.**
+
+Each service keeps its own Dockerfile next to its code. The build context is the repo root:
+the image copies `uv.lock` and all three member manifests, then syncs only its own package
+(`uv sync --locked --package backend --no-install-workspace`, then the code, then a second
+sync). Dependencies land in a layer that our source edits do not invalidate.
+
+Rejected:
+- *A build context per service folder.* Requires either a lockfile per service or a step
+  that copies the root lockfile in — the first contradicts D9's one committed lockfile, the
+  second is a build that reaches outside its own context anyway.
+- *One shared image running all three.* Cheaper to build, but it erases the service
+  boundaries CLAUDE.md asks us to keep, and the extraction job would ship Streamlit.
+
+*Cost:* `docker build` from inside a service folder does not work — builds go through
+`docker compose build`, or `docker build -f backend/Dockerfile .` from the root. And
+touching any one service's `pyproject.toml` busts the dependency layer of all three images.
+
+---
+
+## D12 — 2026-09-18 — Accepted
+**Extraction is a compose job the other two wait on; the statements file is a named volume.**
+
+`statement-extraction` runs to completion and exits 0. `backend` and `frontend` declare
+`depends_on: { condition: service_completed_successfully }`, so compose does not start them
+until it has. The statements file lives in a named volume, mounted read-write into
+extraction and **read-only** into the backend — the artifact has exactly one writer.
+
+Rejected:
+- *A bind mount of `./data` on the host.* Easier to inspect during the demo, but it puts
+  the derived artifact in the working tree, where it can be committed by accident or
+  half-deleted by hand — and the deletion demo depends on the artifact having one
+  authoritative state.
+- *Starting all three together and having the backend wait for the file itself* (an
+  entrypoint poll loop, or a healthcheck that fails until the file exists). That is
+  application code whose only job is startup ordering, and compose already expresses it.
+- *Letting the backend serve before extraction finishes.* It would answer from an empty
+  record, which is the one thing the answering path must not do.
+
+*Cost:* two. Inspecting the artifact from the host now needs `docker compose exec` or
+`docker cp`, not `cat`. And any `docker compose up` re-runs the extraction job before the
+backend returns — which is correct once extraction is real and expensive, and annoying
+before then. The escape hatch for a backend-only restart is
+`docker compose up --no-deps backend`.
+
+---
+
+## D13 — 2026-09-18 — Accepted
+**The first compose file has three services: no Ollama, and no document mount.**
+
+Ollama is in [architecture.md](architecture.md) as a fourth container and is deliberately
+not in `compose.yaml` yet. Nothing in the three skeletons calls a model, and adding the
+service means pinning a model name before we have seen the dataset — which the model-as-
+configuration rule (CLAUDE.md) and D7 both argue against. The source documents are not
+mounted either: extraction fetches the corpus at runtime from external shared storage, so
+the pile does not need to be a volume.
+
+Rejected: wiring Ollama in now with a placeholder model so the compose file matches the
+architecture diagram. A placeholder model name is exactly the hardcoded model the working
+agreement forbids, and an unused service that pulls multi-gigabyte weights slows every
+`compose up` between now and the day we need it.
+
+*Cost:* `compose.yaml` and the architecture diagram disagree until extraction actually
+calls a model. Whoever adds inference adds the Ollama service and its `OLLAMA_HOST`
+configuration in the same change.
