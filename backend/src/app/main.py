@@ -6,6 +6,11 @@ app = FastAPI(
 )
 
 
+@app.get("/query")
+def query() -> dict[str, str]:
+    """Main query endpoint to query the AI environment."""
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
