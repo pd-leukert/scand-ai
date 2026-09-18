@@ -27,4 +27,5 @@ indent-style = "space"
 [tool.uv.workspace]
 members = [
     "backend",
+    "frontend",
 ]
