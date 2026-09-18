@@ -1,0 +1,25 @@
+{
+  "name": "scand-ai monorepo",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+
+  "postCreateCommand": "pip install ruff",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "charliermarsh.ruff",
+        "ms-python.python"
+      ],
+      "settings": {
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+          }
+        }
+      }
+    }
+  }
+}
