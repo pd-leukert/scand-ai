@@ -24,6 +24,12 @@ Optional:
 - `LLM_API_KEY` — sent as `Authorization: Bearer ...` if set. Ollama doesn't need one.
 - `STATEMENTS_FILE_PATH` — defaults to the mock file at `src/app/data/mock_statements.json`.
   Points at the real derived statements file once extraction produces one.
+- `DUMMY_LLM` — set to `true` to skip the model call entirely and answer from a canned
+  response built out of the loaded statements file (real citations, no model). Also lifts
+  the `LLM_BASE_URL`/`LLM_MODEL` requirement. For exercising `/query` end to end — both
+  `stream: false` and the SSE `stream: true` path — without Ollama running. See
+  [decisions.md](../docs/decisions.md) D15.
+Run with `uv run fastapi dev` from the `backend` folder
 
 In a container: `docker compose up backend` from the repo root. Compose runs statement
 extraction first and starts this service only once that job has exited.

@@ -12,8 +12,10 @@ citation rather than an approximate one" — see decisions.md D21.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
+import re
 from collections.abc import AsyncIterator
 
 import httpx
@@ -21,6 +23,9 @@ import httpx
 from .config import get_settings
 from .schemas import Citation, QueryResponse
 from .statements import Statement, load_statements
+
+DUMMY_TOKEN_DELAY_SECONDS = 0.03
+DUMMY_STATEMENT_LIMIT = 5
 
 CITATION_DELIMITER = "===CITATIONS==="
 
@@ -100,6 +105,37 @@ def _resolve_citations(
     return citations
 
 
+def _dummy_answer(statements: dict[str, Statement]) -> tuple[str, list[str]]:
+    """A canned answer for exercising the /query wire format (SSE framing, inline markers,
+    citation resolution) without a configured LLM. Built entirely from statements already
+    loaded from the trusted file — DUMMY_LLM skips the model call, never the citation trust
+    boundary, so this still can't emit a citation that isn't real. See module docstring."""
+    picked = list(statements.values())[:DUMMY_STATEMENT_LIMIT]
+    if not picked:
+        return "The record is empty; there is nothing to cite.", []
+    sentences = [
+        f"{statement.actor.name} ({statement.actor.role}, {statement.actor.organization}) "
+        f"{statement.speech_act} on {statement.document_date}: "
+        f"“{statement.verbatim_span}” [{marker}]."
+        for marker, statement in enumerate(picked, start=1)
+    ]
+    prose = (
+        "This is a dummy answer for testing — DUMMY_LLM is set, so no model was called. "
+        + " ".join(sentences)
+    )
+    return prose, [statement.id for statement in picked]
+
+
+async def _stream_dummy_answer(statements: dict[str, Statement]) -> AsyncIterator[bytes]:
+    prose, statement_ids = _dummy_answer(statements)
+    for token in re.findall(r"\S+\s*", prose):
+        yield _sse("token", {"text": token})
+        await asyncio.sleep(DUMMY_TOKEN_DELAY_SECONDS)
+    citations = _resolve_citations(statement_ids, statements)
+    yield _sse("citations", {"citations": [c.model_dump(mode="json") for c in citations]})
+    yield _sse("done", {})
+
+
 def _request_payload(question: str, statements: dict[str, Statement], *, stream: bool) -> dict:
     settings = get_settings()
     return {
@@ -120,6 +156,9 @@ def _headers() -> dict[str, str]:
 async def answer_question(question: str) -> QueryResponse:
     settings = get_settings()
     statements = load_statements(settings.statements_file)
+    if settings.dummy_llm:
+        prose, statement_ids = _dummy_answer(statements)
+        return QueryResponse(answer=prose, citations=_resolve_citations(statement_ids, statements))
     payload = _request_payload(question, statements, stream=False)
     url = f"{settings.llm_base_url}/chat/completions"
 
@@ -143,6 +182,10 @@ async def stream_answer_question(question: str) -> AsyncIterator[bytes]:
     validated, so nothing unverified reaches the client. See module docstring."""
     settings = get_settings()
     statements = load_statements(settings.statements_file)
+    if settings.dummy_llm:
+        async for chunk in _stream_dummy_answer(statements):
+            yield chunk
+        return
     payload = _request_payload(question, statements, stream=True)
     url = f"{settings.llm_base_url}/chat/completions"
 
