@@ -51,10 +51,33 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - ANSWERING_MODEL=${LLM_MODEL:-qwen3:0.6b}
       - EXTRACTION_MODEL=${EXTRACTION_LLM_MODEL:-${LLM_MODEL:-qwen3:0.6b}}
+      # Reported, not used: the switch's three variables are independent, so a half-set
+      # VM runs happily in the wrong shape. Printing the resolved values puts that in the
+      # deploy log instead of leaving it to be discovered later. See D26.
+      - RESOLVED_RUNTIME=${OLLAMA_RUNTIME:-runc}
+      - RESOLVED_STORE=${OLLAMA_DATA_DIR:-ollama-models (fresh named volume)}
     entrypoint:
       - /bin/sh
       - -c
-      - ollama pull "$$ANSWERING_MODEL" && ollama pull "$$EXTRACTION_MODEL"
+      - |
+        echo "=============================================================="
+        echo " ollama-pull: resolved configuration"
+        echo "   runtime   : $$RESOLVED_RUNTIME   (nvidia = GPU, runc = CPU)"
+        echo "   model store: $$RESOLVED_STORE"
+        echo "   answering : $$ANSWERING_MODEL"
+        echo "   extraction: $$EXTRACTION_MODEL"
+        echo "=============================================================="
+        case "$$RESOLVED_RUNTIME:$$RESOLVED_STORE" in
+          nvidia:ollama-models*)
+            echo "WARNING: GPU runtime but no OLLAMA_DATA_DIR — this will download the"
+            echo "WARNING: model from scratch instead of reusing the weights on disk." ;;
+        esac
+        case "$$RESOLVED_RUNTIME:$$ANSWERING_MODEL" in
+          runc:*27b*|runc:*70b*|runc:*qwen3.8*)
+            echo "WARNING: large model on the CPU runtime — set OLLAMA_RUNTIME=nvidia, or"
+            echo "WARNING: this will be far too slow to demo." ;;
+        esac
+        ollama pull "$$ANSWERING_MODEL" && ollama pull "$$EXTRACTION_MODEL"
     restart: "no"
 
   # A job, not a service: it runs once, writes the statements file, and exits 0. Nothing

@@ -94,9 +94,18 @@ OLLAMA_DATA_DIR=/root/ollama-data        # bind the weights already on disk
 LLM_MODEL=qwen3.8:27b-mtp-bf16           # also drives extraction unless overridden
 ```
 
-Set none of them and you get the laptop stack; set all three and you get the real one.
+Set none of them and you get the laptop stack; set **all three** and you get the real one.
 They are independent, so a partial set runs in a half-state rather than failing — a 27B
-model on CPU will crawl, not error. See [decision D25](docs/decisions.md).
+model on CPU will crawl, not error, and a missing `OLLAMA_DATA_DIR` silently re-downloads
+tens of gigabytes it already has. The `ollama-pull` job prints the configuration it
+resolved and warns on both of those, so check the top of its deploy log
+([D26](docs/decisions.md)).
+
+`OLLAMA_RUNTIME=nvidia` needs a *named* `nvidia` runtime registered with the Docker daemon.
+`docker run --gpus all` working does not prove that — `--gpus` takes a different code path.
+Verify with `docker info | grep -A3 -i runtimes`, and if it is missing, run
+`sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`. See
+[decision D25](docs/decisions.md).
 
 Statement extraction runs first; the backend and the frontend do not start until it has
 finished and exited. The UI is then on <http://localhost:8501>. The backend is not
