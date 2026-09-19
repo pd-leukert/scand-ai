@@ -1876,3 +1876,58 @@ and silent, exactly like the bugs they fix. And "Reading the record…" is copy 
 reviewed; it is accurate about what the backend does (D2: the whole statements file, no
 retrieval), but it is the first user-facing sentence we have written that is not in the
 mockup.
+
+---
+
+## D51 — 2026-09-20 — Accepted *(amends D48's margin rule; records the D42–D48 / D49–D50 merge)*
+**D48's `margin-bottom:1rem` rule now stops at button labels, the header height is a token
+rather than a number two rules had to agree on, and the hero calls the archive a
+communication history rather than workshop notes.**
+
+The deletion branch (D42–D48) and the layout branch (D49–D50) both changed
+`frontend/app.py` without seeing each other. Merging them was not a matter of taking a side
+— two of the fixes were the same bug approached from opposite ends:
+
+- *The same 16px, twice.* D48 gives a markdown container's last child back the 1rem the
+  container's negative margin assumes; D49–D50 removed the negative margin instead. Either
+  alone nets zero. **Both** applied nets a real +16px on every block, which is what the
+  automatic merge produced. Kept D48's, dropped the other — D48 is written down, was
+  isolated by bisection, and fixes the deletion dialog's overlapping button.
+- *`.streamlit/config.toml`* existed on both sides. Took D48's: same `base = "light"`, plus
+  the palette tokens and `color-scheme:light`.
+
+Then two things broke that neither branch could have seen alone, both found by measuring the
+merged page rather than reading the diff:
+
+- **D48's rule reaches inside buttons.** A button's label is a markdown container's last
+  child, so it got the 1rem too. On an inline label a vertical margin does nothing, so it
+  was invisible — but D50 had made the send arrow's label `inline-block` (it has to be, or
+  its centring transform is ignored), and there the margin applied and put the glyph 12px
+  above centre. `button [data-testid="stMarkdownContainer"] > *:last-child` now sets it back
+  to 0. Scoped to buttons on purpose: the dialog's warning paragraph, which is what D48 was
+  fixing, keeps its margin and still clears its button by 14px.
+  Rejected: *dropping the arrow's `inline-block`/transform and accepting the glyph sitting
+  low.* It is the only reason the arrow looks centred at all — the "↑" glyph reserves space
+  below itself for descenders it does not have.
+- **The header height was a number in two places.** The hero filled the viewport with
+  `calc(100vh - 73px)`, a literal that was only ever right while the header held nothing
+  taller than the 32px logo. D46/D47's always-visible "Delete a person" button is 40px, so
+  the real header became 81px and the hero overhung it. It is `--header-height` now, read by
+  both. Applied as `min-height`, because Streamlit sizes these boxes itself and ignores a
+  `height` declaration — the same wall D48 hit forcing `height:auto`.
+
+- **The heading anchor was never ours to keep.** Streamlit puts a link icon inside every
+  heading, painted only on hover but occupying its 16px in the line at all times — so the
+  centred hero title was sitting 12px left of centre, at rest and on hover. It joins the
+  rule that already hides Streamlit's menu, footer and decoration. Nothing in this app links
+  to a heading anchor, so there is no capability being given up.
+
+Also, copy: the hero said "Ask about your workshop notes". The archive is two years of
+transcripts, email threads and status reports ([corpus.md](corpus.md)), so it now says
+"Ask about your communication history" — still one line at the width D50 set.
+
+*Cost:* D48's rule now has an exception, so it is two rules to keep in mind rather than one,
+and the exception is pinned to the same Streamlit `data-testid` D48's own *Cost* note flags
+as upgrade-fragile. The lesson worth keeping is narrower than either rule: a global rule
+matched on a Streamlit `data-testid` will land on Streamlit's own widgets as well as on our
+components, and whether that is visible depends on something as small as a label's `display`.

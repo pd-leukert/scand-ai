@@ -46,8 +46,12 @@ STYLE = """
 }
 html, body, .stApp{background:var(--bg) !important;color:var(--text);
   font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;}
+/* stHeaderActionElements is the anchor-link icon Streamlit adds inside every heading. It is
+   only painted on hover, but it sits in the line the whole time, so it was pushing the
+   centred hero title 12px to the left of centre. */
 #MainMenu, header[data-testid="stHeader"], footer,
-[data-testid="stDecoration"], [data-testid="collapsedControl"]{display:none !important;}
+[data-testid="stDecoration"], [data-testid="collapsedControl"],
+[data-testid="stHeaderActionElements"]{display:none !important;}
 .block-container{padding:0 !important;max-width:100% !important;}
 /* Streamlit's own vertical-block gap beats a plain class selector on specificity;
    !important on every section override below is what actually wins. */
@@ -59,6 +63,12 @@ div[data-testid="stVerticalBlock"]{gap:0;}
    Giving the last child the margin back costs no visible space and fixes all of them (D48). */
 [data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:1rem !important;}
 button p{margin:0;}
+/* D48's rule above targets every markdown container's last child, which includes the label
+   inside a button. On an inline label that margin does nothing, so it went unnoticed — but
+   the send arrow's label is inline-block (it has to be, for its transform), so there the
+   margin applies and pushed the glyph half of it off centre. Button labels are not the
+   mis-measured blocks D48 is about. */
+button [data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:0 !important;}
 
 /* header bar */
 .st-key-header{background:var(--surface);border-bottom:1px solid var(--border);}
@@ -510,7 +520,7 @@ if not st.session_state.question:
     with hero_placeholder.container():
         with st.container(key="hero"):
             st.markdown(
-                '<h1 class="sc-hero-title">Ask about your workshop notes</h1>'
+                '<h1 class="sc-hero-title">Ask about your communication history</h1>'
                 '<p class="sc-hero-sub">scandAI answers from your meeting notes, status reports '
                 "and email threads. Every claim traces back to its source.</p>",
                 unsafe_allow_html=True,
