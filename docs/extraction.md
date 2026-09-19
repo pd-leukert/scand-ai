@@ -178,11 +178,12 @@ example `2700`.
 
 ### Option B: Docker Compose (the same setup Verda uses)
 
-Start Docker Desktop, put the model name in a `.env` file at the repo root (it is gitignored),
-then run one document through the whole chain:
+Start Docker Desktop and copy [.env.example](../.env.example) to `.env` at the repo root (`.env` is
+gitignored). Edit the model name in it if you want a different one. Then run one document through
+the whole chain:
 
 ```
-echo EXTRACTION_MODEL=<model> > .env
+cp .env.example .env
 docker compose -f compose.yaml -f compose.extraction.yaml run --rm statement-extraction \
   uv run --frozen python -m src.app.extract 09_2025-02
 ```
@@ -221,8 +222,9 @@ before creating one: instances draw on a shared balance.
    `git clone https://github.com/pd-leukert/scand-ai.git && cd scand-ai && git checkout shah/extraction-pipeline`
    (after the merge, stay on `main`).
 4. **Upload the corpus** from your machine: `scp -r corpus <user>@<vm-ip>:~/scand-ai/corpus`
-5. **Choose the model.** Put `EXTRACTION_MODEL=<model>` in a `.env` file in the repo folder on the VM.
-   Pick the largest model that fits the GPU's memory. Ollama's site lists sizes.
+5. **Choose the model.** Run `cp .env.example .env` in the repo folder on the VM and set
+   `EXTRACTION_MODEL` in it to the exact Ollama tag. Pick the largest model that fits the GPU's
+   memory. Ollama's site lists sizes.
 6. **Run:**
 
 ```
