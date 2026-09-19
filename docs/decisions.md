@@ -232,6 +232,45 @@ configuration in the same change.
 ---
 
 ## D14 — 2026-09-19 — Accepted
+**The Streamlit chat UI calls `/query` non-streaming (`stream: false`), not the SSE path.**
+
+`/query` already supports token-by-token streaming for the prose answer. Rejected: parsing
+the `text/event-stream` response by hand and rendering it incrementally. Doable, but it is
+real code — buffering `token`/`citations`/`done` SSE frames inside Streamlit's
+script-rerun model — for a UX gain that does not pay off yet: there is no answering model
+running behind `/query` to make a blocking wait feel slow, and the frontend's only job
+right now is proving the wire-up between the two services works, with citations rendered
+per claim.
+
+*Cost:* once Ollama is wired up, the chat will feel blocking for the length of one full
+answer instead of appearing token by token. Revisit then — the backend side of streaming
+already exists, so this is a frontend-only follow-up, not a new capability to build.
+
+---
+
+## D15 — 2026-09-19 — Accepted
+**`DUMMY_LLM=true` skips the model call and answers from the loaded statements file
+directly, so `/query` (both the plain and SSE paths) can be tested without Ollama.**
+
+Needed a way to exercise the real wire contract — SSE framing, inline `[n]` markers, the
+server-side citation-resolution step — while nothing calls a real model yet (D13). Picked:
+a config flag, checked in `config.py` alongside `LLM_BASE_URL`/`LLM_MODEL`, that swaps in a
+canned answer built from the first few statements in whatever file is already loaded, then
+runs that answer through the *same* `_resolve_citations` function a real model's output
+goes through. Rejected:
+- *A hardcoded fixture in the frontend.* Tests nothing about the backend's SSE framing or
+  citation resolution, and puts response-shaping logic in the one place CLAUDE.md says
+  must hold none.
+- *A separate `/query/dummy` endpoint.* Two routes to keep in sync with the real contract,
+  for a distinction the frontend and the judges' traffic should never need to make.
+
+Because the dummy path still calls `_resolve_citations` against the trusted file, it can't
+emit a citation that isn't real even though no model produced it — the same guarantee rule
+1 asks for, just exercised without inference.
+
+*Cost:* one more branch in `answer_question`/`stream_answer_question` to keep in sync with
+the real path if the response shape changes. Remove it once Ollama answers are the only
+thing anyone needs to test against.
 **Citations locate a claim by line range plus a genre-specific pointer. D5's PDF clause is
 retired.**
 
@@ -488,6 +527,35 @@ streaming the raw model output straight through, which would put an unvalidated 
 marker in front of a judge before we've checked it resolves to anything real. The buffering
 keeps a safety margin equal to the delimiter's length so the delimiter can't leak a
 fragment of itself if it lands across two upstream chunks.
+
+---
+
+## D22 — 2026-09-19 — Accepted
+**The frontend is reached through Coolify's proxy, not a published host port. It declares
+`expose: 8501` and `SERVICE_FQDN_FRONTEND_8501`.**
+
+D17 committed us to submitting a URL, and the URL comes from Coolify's reverse proxy. The
+proxy needs to be told which service and which container port the domain belongs to; it
+does not infer that from a compose file. `ports: "8501:8501"` published Streamlit straight
+onto the VM's public interface and left the proxy with nothing to route, so the deployment
+came up healthy and the domain served nothing. `expose` keeps the port on the compose
+network, and the `SERVICE_FQDN_FRONTEND_8501` variable — passed through unset, filled in by
+Coolify — is what generates the route. The backend is unaffected: it was never published
+and still is not.
+
+Rejected:
+- *Keeping `ports` and assigning the domain in the Coolify UI.* Works, but the routing then
+  lives in a web form nobody else on the team can see, and the compose file in the repo
+  stops describing how the thing is actually reached. It also leaves 8501 open on the
+  public interface, bypassing TLS, for anyone who finds the IP.
+- *Publishing the port and submitting `http://<vm-ip>:8501` as the URL.* No TLS on a URL
+  judges will be asked to type, and a bare IP reads as unfinished.
+
+*Cost:* `docker compose up` on a laptop no longer serves the frontend on localhost:8501 —
+local work needs `docker compose run --service-ports frontend`, or running Streamlit
+outside the container as `frontend/README.md` already describes. And the deployment now
+depends on a Coolify-specific variable name, which is a lock-in we accept for the weekend;
+moving hosts means changing this block.
 
 ---
 
