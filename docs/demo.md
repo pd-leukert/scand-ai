@@ -27,8 +27,8 @@ themselves, then a live question session where they check our citations by hand.
 3. **Delete a person.** Let them pick. Run the deletion, show the receipt, then ask about
    that person — and then ask about a decision from the same meeting, which still answers.
    Say out loud that this is pseudonymisation and what that does and does not guarantee.
-4. **The thing it does unasked.** *(TODO: pending the team's choice — see
-   [roadmap.md](roadmap.md).)*
+4. **The thing it does unasked.** *(Proposed: flag statements meant to be private — see
+   [roadmap.md](roadmap.md) and D19. Pending the team's agreement.)*
 5. **What it cannot do.** Short, specific, unhedged. The honest-limits list from
    [roadmap.md](roadmap.md). This is scored.
 

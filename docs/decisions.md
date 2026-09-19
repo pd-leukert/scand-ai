@@ -360,7 +360,9 @@ speaker's organisation and role — and nothing else. The actor is taken from th
 An organisation or role is kept only if those words are in the attendee list or the unit, and
 `agreed_by` keeps only people who appear in the document. Units are batched by a word budget
 and never split, which refines D1: still one document at a time, in several calls when it is
-long.
+long. The budget defaults to 300 words. On the 4B model one 1000-word batch stopped covering the
+document (22 statements kept, 28 thrown away), while three 300-word batches kept all 48 in the
+same total time.
 
 The Ollama service, the model download, the corpus mount and the real command are in
 `compose.extraction.yaml`; the GPU reservation is in `compose.gpu.yaml`. `compose.yaml` is
@@ -385,3 +387,31 @@ Rejected:
 is our choice while D13's "external shared storage" is still undefined. A call that fails late
 loses the run, with no resume. And the prompt has not met a real model yet, so recall and the
 share of statements thrown away are both unknown.
+
+---
+
+## D19 — 2026-09-19 — Proposed
+**The thing the agent does unasked: flag statements that were meant to be private.**
+
+Extraction gives every statement a `handling` value: `none`, `personal` (private details of
+someone's life) or `confidential` (a speaker asks that it not be shared or written down, or it
+is commercially sensitive). When an answer draws on a `personal` or `confidential` statement,
+the agent says so without being asked and shows the receipt. Chosen because the archive's
+`INTERNAL` transcripts contain exactly this — "do not put that in any shared document", terms
+given to another customer, an executive's family circumstances — and extraction faithfully
+recorded all of it, as a summariser would repeat it. It uses only what is already in the
+statements file, so it adds no second derived artifact and nothing new for deletion to reach.
+
+Proposed by one team member; it becomes Accepted when the team agrees.
+
+Rejected:
+- *Detecting agreed-then-never-done items across documents* (practice question P8). A stronger
+  demo, but it needs the cross-document pass that D4 defers.
+- *Dropping sensitive statements at extraction.* The record would lose real content without
+  saying so, which is the opposite of what this project is for.
+
+*Cost:* the judgement is the model's, so it will miss some statements and over-flag others,
+and the same one may be marked differently on two runs. A request such as "do not put that in
+any shared document" refers to the line before it, so it only works when both are in the same
+extraction batch. And this flags, it does not protect: the statement stays in the file and in
+the receipt. Whether an answer should withhold the detail is an open question.

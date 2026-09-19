@@ -46,7 +46,7 @@ def main(filters: list[str]) -> int:
     if "://" not in host:
         host = f"http://{host}"
     num_ctx = int(os.environ.get("EXTRACTION_NUM_CTX", "8192"))
-    batch_words = int(os.environ.get("EXTRACTION_BATCH_WORDS", "1000"))
+    batch_words = int(os.environ.get("EXTRACTION_BATCH_WORDS", "300"))
     timeout = float(os.environ.get("EXTRACTION_TIMEOUT", "600"))
     corpus = Path(os.environ.get("CORPUS_DIR", Path(__file__).parents[3] / "corpus"))
     out = Path(os.environ.get("STATEMENTS_PATH", "statements.jsonl"))

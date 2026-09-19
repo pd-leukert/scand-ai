@@ -86,6 +86,7 @@ first extraction run. Example, from `emails/07_op-id-field-exclusion.txt`:
   "span": "I can purge the landing zone. I cannot purge the attachments.",
   "claim": "Kwame Boateng can purge OP_ID from the landing zone but not from the emailed attachments.",
   "act": "report",
+  "handling": "none",
   "actor": {"name": "Kwame Boateng", "org": "RELEX", "role": "Technical Consultant", "label": null},
   "agreed_by": []
 }
@@ -110,6 +111,8 @@ Rules the layout encodes:
   `Guest 1` or a dial-in number in some Teams transcripts. The real speaker is not
   recoverable and we do not guess.
 - **`agreed_by` empty means no agreement is recorded**, which is a valid and useful answer.
+- **`handling` is `none`, `personal` or `confidential`** (D19), the model's judgement of
+  whether the statement was meant to be private. It drives the flag the agent raises unasked.
 - **`claim` is a one-sentence restatement**, kept beside the verbatim `span` so the
   answering model has the context that pronouns in the span lack.
 - **Dates are ISO 8601.** Source formats differ: reports use `06-04-2026` for 6 April and

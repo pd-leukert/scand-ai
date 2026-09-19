@@ -35,6 +35,7 @@ def statement(**overrides) -> dict:
         "agreed_by": ["Ann Lee"],
         "org": "RELEX",
         "role": None,
+        "handling": "none",
     }
     return item | overrides
 
@@ -60,6 +61,7 @@ def test_a_good_statement_becomes_a_record_with_code_derived_location_and_actor(
             "span": "I propose we drop the operator ID field from the extract.",
             "claim": "Bo Ray proposed dropping the operator ID field from the extract.",
             "act": "proposal",
+            "handling": "none",
             "actor": {"name": "Bo Ray", "label": None, "org": "RELEX", "role": None},
             "agreed_by": ["Ann Lee"],
         }
@@ -87,10 +89,17 @@ def test_a_unit_number_outside_the_document_is_dropped():
     assert dropped == {"unit not in this batch": 1}
 
 
-def test_an_unknown_act_or_an_empty_claim_is_dropped():
-    records, dropped = run(statement(act="promise"), statement(claim="  "))
+def test_an_unknown_act_or_handling_or_an_empty_claim_is_dropped():
+    records, dropped = run(
+        statement(act="promise"), statement(claim="  "), statement(handling="secret")
+    )
     assert records == []
-    assert dropped == {"no claim or unknown act": 2}
+    assert dropped == {"no claim or unknown act or handling": 3}
+
+
+def test_the_handling_the_model_gives_is_kept_on_the_record():
+    records, _ = run(statement(handling="confidential"))
+    assert records[0]["handling"] == "confidential"
 
 
 def test_the_same_quote_twice_is_kept_once():

@@ -21,7 +21,7 @@ We are building an agent that answers the same questions and can **show its rece
 | 2 | **Suggestion ≠ commitment** | In scope. Extraction records what kind of speech act a statement is, who made it, and for whom they spoke. |
 | 3 | **Know stale from wrong** | Out of scope for the MVP, planned next. See [roadmap](docs/roadmap.md). |
 | 4 | **Delete a person** | In scope, with a deliberate and documented interpretation. See [decision D3](docs/decisions.md). |
-| 5 | **Do one thing unasked** | Not yet chosen. Placeholder in [roadmap](docs/roadmap.md). |
+| 5 | **Do one thing unasked** | Proposed: flag statements meant to be private. See [D19](docs/decisions.md) and [roadmap](docs/roadmap.md). |
 
 Scoring weights and how the judges test it: [docs/challenge.md](docs/challenge.md).
 

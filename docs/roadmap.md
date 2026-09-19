@@ -76,6 +76,18 @@ rather report it unknown than guess.
 
 ## The thing it does unasked (15%)
 
-> **TODO — team to decide.** Leave this section as the placeholder until we choose.
-> Whatever we pick has to be genuinely unprompted: something the agent surfaces or does
-> without the judge asking for it, demonstrated in the live session.
+> **Proposed, pending the team's agreement — see [decisions.md](decisions.md) D19.**
+
+The agent flags statements that were meant to be private. Extraction marks each statement
+`none`, `personal` or `confidential`: private details of someone's life, a speaker asking
+that it not be shared or written down, or commercially sensitive terms. When an answer draws
+on one, the agent says so without being asked, and shows the receipt.
+
+The archive earns this one. Its `INTERNAL` transcripts contain "do not put that in any shared
+document", terms given to another customer, and an executive's family circumstances — and a
+plain summariser repeats all of it.
+
+Limits, stated plainly. The judgement is the model's, so it will miss some and over-flag
+others. A request that refers to something said earlier only works when both are in the same
+extraction batch. And it flags; it does not protect. The statement is still in the file, and
+whether an answer should withhold the detail is not decided.

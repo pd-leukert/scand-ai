@@ -5,6 +5,7 @@ from .documents import Document, Unit
 from .matching import find_span
 
 ACTS = ["proposal", "agreement", "decision", "report", "question", "objection"]
+HANDLING = ["none", "personal", "confidential"]
 
 SCHEMA = {
     "type": "object",
@@ -21,8 +22,18 @@ SCHEMA = {
                     "agreed_by": {"type": "array", "items": {"type": "string"}},
                     "org": {"type": ["string", "null"]},
                     "role": {"type": ["string", "null"]},
+                    "handling": {"type": "string", "enum": HANDLING},
                 },
-                "required": ["unit", "span", "claim", "act", "agreed_by", "org", "role"],
+                "required": [
+                    "unit",
+                    "span",
+                    "claim",
+                    "act",
+                    "agreed_by",
+                    "org",
+                    "role",
+                    "handling",
+                ],
             },
         }
     },
@@ -40,19 +51,26 @@ For every statement, return:
 - span: the words of the statement, copied exactly from that one unit, character for character. \
 Never fix, shorten, complete, paraphrase or join text. If a sentence is cut off, or a number is \
 incomplete, quote it cut off. Do not finish it.
-- claim: one plain sentence saying what was stated. Say only what the span says. Use names as \
-written.
-- act: proposal (someone floats an idea or asks for something), agreement (someone accepts a \
-proposal), decision (something is settled), report (a fact or status is given), question, \
-or objection. An idea floated by one side is a proposal even if it sounds firm. Only call \
-something a decision or agreement if the words show it was settled.
+- claim: one plain sentence saying what was stated. Use only words and numbers that are in the \
+span. Do not add units, currency, dates or names the span does not contain. If the span is \
+unclear or garbled, say it is unclear. Use names as written.
+- act: proposal (someone floats an idea or asks for something), agreement (someone accepts \
+something another person proposed or said), decision (something is settled), report (a fact or \
+status is given), question, or objection. An idea floated by one side is a proposal even if it \
+sounds firm. Only call something a decision or agreement if the words show it was settled. \
+Repeating the previous line is not an agreement.
 - agreed_by: the names of the people who explicitly agreed to this statement in this document. \
 An empty list if nobody did. Silence is not agreement.
 - org and role: the speaker's organisation and job title, only if the document states them in \
 the attendee list or a signature. Copy the words. Otherwise null.
+- handling: personal if the statement reveals private details of someone's life, such as health, \
+family or personal circumstances. confidential if a speaker asks that it not be shared or \
+written down, or it is commercially sensitive, such as terms given to another customer. \
+Otherwise none. Judge the statement the request is about, not only the request itself.
 
-Use only the text you are given. Do not use anything you know from elsewhere. Skip greetings, \
-filler and small talk. If the text contains no statements, return an empty list.\
+Skip fragments. A line that is cut off, garbled, or only echoes the previous line is not a \
+statement. Use only the text you are given. Do not use anything you know from elsewhere. Skip \
+greetings, filler and small talk. If the text contains no statements, return an empty list.\
 """
 
 # One chat call: messages in, the parsed JSON answer out.
@@ -83,8 +101,8 @@ def extract_document(
             if match is None:
                 dropped["span not in the unit"] += 1
                 continue
-            if not claim or item["act"] not in ACTS:
-                dropped["no claim or unknown act"] += 1
+            if not claim or item["act"] not in ACTS or item["handling"] not in HANDLING:
+                dropped["no claim or unknown act or handling"] += 1
                 continue
             if (unit_no, match.text) in seen:
                 dropped["duplicate"] += 1
@@ -103,6 +121,7 @@ def extract_document(
                     "span": match.text,
                     "claim": claim,
                     "act": item["act"],
+                    "handling": item["handling"],
                     "actor": {
                         "name": unit.name,
                         "label": unit.label,
