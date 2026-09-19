@@ -31,7 +31,7 @@ This is the direct cause of D4.
 
 ---
 
-## D2 — 2026-09-18 — Accepted *(what goes into context is now reconciled.json — D40)*
+## D2 — 2026-09-18 — Accepted *(what goes into context is now reconciled.json — D42)*
 **The whole statements file goes into the answering model's context. No retrieval.**
 
 Rejected: retrieval or embedding-based selection of relevant statements. Rejected for the
@@ -47,7 +47,7 @@ retrieval with embeddings only if that is not enough.
 
 ---
 
-## D3 — 2026-09-18 — Accepted *(its "no second derived artifact" condition no longer holds — see D40)*
+## D3 — 2026-09-18 — Accepted *(its "no second derived artifact" condition no longer holds — see D42)*
 **Deletion redacts a person to a role-class placeholder in the statements file.**
 
 A deleted person's name is replaced with `[former RELEX employee]` or
@@ -78,7 +78,7 @@ re-run of the pipeline — this decision has to be revisited, because the name c
 
 ---
 
-## D4 — 2026-09-18 — Superseded by D40
+## D4 — 2026-09-18 — Superseded by D42
 **Currency is out of scope for the MVP.**
 
 We do not classify statements as stale or never-true, and we do not link statements that
@@ -343,7 +343,7 @@ file each time, which is the boring version and fine at this size.
 
 ---
 
-## D16 — 2026-09-19 — Superseded by D40
+## D16 — 2026-09-19 — Superseded by D42
 **Currency stays out of today's MVP. The agreed successor is a second-pass LLM layer that
 groups statements and evaluates them — not a date heuristic, and not nothing.**
 
@@ -1275,11 +1275,12 @@ Rejected:
 
 ---
 
-## D40 — 2026-09-19 — Accepted *(supersedes D4 and D16)*
-*Numbering: written as D31–D34 on the `david/llm-b` branch and renumbered D40–D43 at merge,
-because `main` had meanwhile taken D31–D36 for the whole-document extraction work (PR #19, #21),
-and D37–D39 are claimed by the deletion PR. Commit messages and PR #20 refer to the old numbers:
-D31→D40, D32→D41, D33→D42, D34→D43. Main's D31–D36 are untouched.*
+## D42 — 2026-09-19 — Accepted *(supersedes D4 and D16)*
+*Numbering: written as D31–D34 on the `david/llm-b` branch, renumbered D40–D43 at the first
+merge (PR #19, #21 had taken D31–D36), and renumbered again at the second, when PR #24 took
+D38–D41 (plain-JSON payload, question first) for itself. The reconciliation decisions are now
+D42–D47: D42 was D40, D43 was D41, D44 was D42, D45 was D43, D46 was D44, D47 was D45. Commit
+messages and PR #20 use the older numbers. Main's D31–D41 are untouched.*
 
 **Currency is in the MVP. A second LLM pass groups the statements by topic, writes explicit
 relations between them, and derives a status for each statement from those relations alone.
@@ -1429,7 +1430,7 @@ Smaller calls made while building it, each with what it beat:
 
 ---
 
-## D41 — 2026-09-19 — Accepted
+## D43 — 2026-09-19 — Accepted
 **The extraction pass is left exactly as it is. Everything below is the second pass and the
 answering path.**
 
@@ -1446,7 +1447,7 @@ because their span was not in the unit verbatim, and nothing invented reached th
 So: those are prompt-and-model problems, and the evidence is that they are what a bigger model
 is for. Rewriting the extraction prompt against a 0.6b model's mistakes would tune it for a
 model we do not ship. The second pass's failures are different in kind — they are places where
-code accepted something no model should have been able to get past it — and those are D42.
+code accepted something no model should have been able to get past it — and those are D44.
 
 *Cost:* the extraction quality numbers above are unverified against the VM model, and if they
 survive at 27B then the first pass needs the work after all. The four-document run is the test
@@ -1457,12 +1458,12 @@ one file whose output every other file is derived from is the expensive kind.
 
 ---
 
-## D42 — 2026-09-19 — Accepted *(extends D40)*
+## D44 — 2026-09-19 — Accepted *(extends D42)*
 **Three new gates on the reconciliation pass, and the topic tagger is no longer shown a
 statement's speech act.**
 
-D40 built the second pass and validated everything the model returns against the statements it
-was given. The four-document run (D41) got past all of it and produced an artifact that was
+D42 built the second pass and validated everything the model returns against the statements it
+was given. The four-document run (D43) got past all of it and produced an artifact that was
 structurally perfect and semantically worthless: 92 statements in 3 topics named `proposal`,
 `agreement` and `report`, 27 of the 33 relations a single `corrects` chain running
 `#1→#2→#3→…` down the list, and 27 statements labelled `never-true` including one whose whole
@@ -1479,17 +1480,17 @@ Each gate answers one of those.
   kebab-case slug, so `_slug` had no reason to refuse it. Belt and braces with the above: the
   render fix removes the temptation, this one removes the possibility.
 - **`RECONCILE_MAX_TOPIC_SHARE` (0.5)** — no single topic may hold more than half the run's
-  statements. D40 gated fragmentation (`RECONCILE_MAX_TOPICS`) because a grouping where no
+  statements. D42 gated fragmentation (`RECONCILE_MAX_TOPICS`) because a grouping where no
   topic holds two statements finds no links and reports the whole record `current`. Total
   collapse is the same failure from the other end: one topic held 84 of 92 statements, was cut
   into three chunks of 28 by `RECONCILE_TOPIC_MAX`, and each chunk showed the model 28
   unrelated statements and asked what they had to do with each other.
 - **`RECONCILE_MAX_FLAGGED` (0.5)** — per topic, the share of statements a relation may put in
-  `never-true`, `stale` or `disputed`. This is the one that catches the chain. D40 deliberately
+  `never-true`, `stale` or `disputed`. This is the one that catches the chain. D42 deliberately
   left `corrects` without the date guard it gave `supersedes`, on the reasoning that a
   statement can show a record was never right without being dated after it — which is correct,
   and which also means `corrects` has no guard at all, while producing the *more* severe label.
-  A density gate is relation-kind-agnostic and catches the degenerate shape directly. D40 called
+  A density gate is relation-kind-agnostic and catches the degenerate shape directly. D42 called
   density "a review flag, not a gate"; over half a topic it is now a gate. `unresolved` is
   excluded from the count deliberately: it falls out of a proposal nobody answered, which is a
   property of one statement rather than a link, and a topic of open proposals is not a chain.
@@ -1506,7 +1507,7 @@ existed untunable on the VM.
 dense, a small corpus legitimately has one big topic, and a real subject could be called
 `report`. All are configurable, and a run over one or two documents should expect to loosen
 them exactly as it already loosens `RECONCILE_MAX_TOPICS`. Three gates now fail the whole job
-rather than dropping what tripped them, which is consistent with D40 — a half-reconciled record
+rather than dropping what tripped them, which is consistent with D42 — a half-reconciled record
 is worse than none — but it means one bad topic costs the whole twelve-minute run.
 
 **What is still not checked, and cannot be from here.** A summary that contradicts the statuses
@@ -1521,7 +1522,7 @@ risk is not acceptable by Sunday.
 
 ---
 
-## D43 — 2026-09-19 — Accepted *(supersedes D21's base64 encoding, not its trust boundary)*
+## D45 — 2026-09-19 — Accepted *(supersedes D21's base64 encoding, not its trust boundary)*
 **The record goes into the answering prompt as plain JSON, not base64. The context the model is
 served is configuration, and a record that does not fit is refused rather than truncated.**
 
@@ -1580,14 +1581,14 @@ tokens by the backend's own estimate. Measure the VM model before committing to 
 
 ---
 
-## D44 — 2026-09-19 — Accepted *(extends D36 and D37 to the reconciled file)*
+## D46 — 2026-09-19 — Accepted *(extends D36 and D37 to the reconciled file)*
 **`reconciled.json` is reduced the way `statements.json` was: document-level fields once, in a
 `documents` table; per statement only `id`, `claim`, `actor{name, organization}`,
 `speech_act`, `statement_date` and `status`. The answering model is shown each statement under a
 short alias rather than its real id.**
 
 D36 and D37 cut the statements file and the payload built from it, and left the second
-artifact — the one the answering path reads by default (D40) — carrying everything the first
+artifact — the one the answering path reads by default (D42) — carrying everything the first
 had dropped. Direction from David, who owns this branch: apply the same reductions to the
 reconciliation layer, keeping what the layer is for. What it keeps is untouched: topics,
 relations, statuses, receipts, summaries and problems.
@@ -1607,7 +1608,7 @@ receipts all name statements by id, so it is load-bearing. Its scheme is unchang
 (`<document id>#<position>`), so nothing keyed on an id in `statements.json` has to change.
 
 **The larger saving is in what the model is sent, not in the file.** Measured on the
-92-statement artifact from the four-document run (D41), as the size of the JSON the answering
+92-statement artifact from the four-document run (D43), as the size of the JSON the answering
 model receives:
 
 | | chars | of today's |
@@ -1648,23 +1649,23 @@ Rejected:
 file now points at a document and a paraphrased claim, not at a line range or a quote a judge
 can diff against the source, and D37 records that cost in full; this entry adds nothing to it
 except that it is now true of both files. Deletion keeps one place to reach — the claim is where
-a redacted name can hide, as in D37 — and gains the topic summaries and problem notes (D40,
+a redacted name can hide, as in D37 — and gains the topic summaries and problem notes (D42,
 rule 4). The `<document>#<position>` scheme is now agreed between extraction and the backend by
 convention only: change either side's numbering and the backend derives the wrong document
-silently. The token guard's constant (D43) was measured on the old, larger shape and not
+silently. The token guard's constant (D45) was measured on the old, larger shape and not
 re-measured on this one; the shorter ids may tokenise worse per character, so treat its estimate
 as an order of magnitude until it is.
 
 
 ---
 
-## D45 — 2026-09-19 — Accepted *(extends D44; supersedes D44's "omit `current`" only in that it stays rejected)*
+## D47 — 2026-09-19 — Accepted *(extends D46; supersedes D46's "omit `current`" only in that it stays rejected)*
 **The answering model is shown the reconciled record as a speaker table, a column list and one
 array per statement — not one object per statement — and is no longer sent the topic summaries,
 the problem notes, or the relation list. A statement's relations arrive as a `links` cell on the
 statement they land on. `reconciled.json` itself is unchanged.**
 
-D44 measured the model's payload and found 47% of it in relations and problems, and 37% in one
+D46 measured the model's payload and found 47% of it in relations and problems, and 37% in one
 templated `unanswered` problem per statement. The rest was keys: `speech_act`, `organization` and
 `statement_date` repeated on every statement. Direction from David: shrink it further, keeping
 what the model needs to answer from this file alone.
@@ -1675,14 +1676,14 @@ what the model needs to answer from this file alone.
   in `columns`.
 - **No problems, no summaries in the payload.** A templated problem is ids in a sentence — it says
   nothing the status and the relation do not. The model-written ones say the same in prose, and
-  prose is what deletion cannot redact and what D42 caught inventing a claim about a named
+  prose is what deletion cannot redact and what D44 caught inventing a claim about a named
   person. Prompt rule 7 ("if a topic has a problem, cite it") is replaced by the links.
 - **`links`, from the side the relation lands on.** `superseded-by`, `corrected-by`,
   `answered-by`, `conflicts-with` (on both ends). Every relation survives, so nothing that used to
   be reachable is lost, including `answers`, which no status carries. Stored once per relation, not
   on both ends, except for conflicts.
 - **Compact separators** in `json.dumps` — about 6% of characters for nothing, both modes.
-- **`status` stays explicit, including `current`.** I proposed omitting it; D44 rejected that and
+- **`status` stays explicit, including `current`.** I proposed omitting it; D46 rejected that and
   the reasoning holds harder in a row, where an empty cell is ambiguous.
 - **Citations are untouched.** `_resolve_citations`, `Citation` and the SSE payload are as before;
   the model still cites aliases and the backend still copies everything from its own record. A
@@ -1694,7 +1695,7 @@ the per-statement saving grows with statement count, and the problems saving dep
 unanswered statements a real run has. Re-measure on a real artifact.
 
 Rejected:
-- *Changing `reconciled.json` itself.* D44 already argued the alias belongs where the tokens are
+- *Changing `reconciled.json` itself.* D46 already argued the alias belongs where the tokens are
   spent, and a different file shape would put `statements.json` and `reconciled.json` out of step.
 - *Abbreviating `speech_act` (`prop`, `deci`, …).* Saves a few characters a row and gives a small
   model codes to decode; the full words are in the prompt already.
@@ -1703,11 +1704,11 @@ Rejected:
 
 *Cost:* a row is harder for a small model than an object: this has been run against unit tests and
 the mock, **not** against the answering model on the VM, and `qwen3:0.6b` is exactly the model that
-stopped citing when base64 took the keys away (D43). Try it on the real model before Sunday and
+stopped citing when base64 took the keys away (D45). Try it on the real model before Sunday and
 fall back to objects if it stops citing. The model no longer sees the `unanswered` problem
 entries, so it relies on `status: unresolved` alone for those. The topic summaries and problem notes
 are still written to `reconciled.json` and still loaded, and now nothing in the answering path reads
-them: the deletion risk they carry (D40, rule 4) is unchanged for as long as they stay in the file,
+them: the deletion risk they carry (D42, rule 4) is unchanged for as long as they stay in the file,
 and `KEEP_PROSE = False` is now free — it costs the answering path nothing. Left on, since the
-deletion PR owns that switch. The token guard's constant (D43) was measured on JSON objects; rows
+deletion PR owns that switch. The token guard's constant (D45) was measured on JSON objects; rows
 tokenise differently, so it is an order of magnitude here too.

@@ -104,7 +104,7 @@ Three things worth knowing:
 ## What the answering model is shown
 
 The file above is the *stored* form. The backend re-shapes it for the model on every
-question ([llm_client.py](../backend/src/app/llm_client.py), decision D45), because
+question ([llm_client.py](../backend/src/app/llm_client.py), decision D47), because
 what the model reads is what costs tokens:
 
 ```jsonc
@@ -147,14 +147,14 @@ anything it did not hand out is dropped. What goes to the frontend is copied fro
 ```
 
 The frontend renders the status pill from `status` and "Because of …" from `status_receipts`.
-Nothing about this shape changed with D45; a test
+Nothing about this shape changed with D47; a test
 (`test_a_model_reply_becomes_citations_the_frontend_can_render`) pins it.
 
 ## Where to look
 
 | | |
 |---|---|
-| Why the pass exists, what it rejected | D40, D42 in [decisions.md](decisions.md) |
-| Why the stored file is shaped this way | D44 |
-| Why the model is shown rows, not this JSON | D45 |
+| Why the pass exists, what it rejected | D42, D44 in [decisions.md](decisions.md) |
+| Why the stored file is shaped this way | D46 |
+| Why the model is shown rows, not this JSON | D47 |
 | Full plan and failure analysis | [plans/second-pass-reconciliation.md](plans/second-pass-reconciliation.md) |

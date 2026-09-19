@@ -122,7 +122,7 @@ def test_the_model_is_never_shown_a_real_statement_id_or_a_document_name():
 
 def test_the_tagger_is_never_shown_a_statements_speech_act():
     """Asked to name a subject while looking at one, a small model copies the act and every
-    topic comes back called "proposal". Stage A is shown no act at all. See D42."""
+    topic comes back called "proposal". Stage A is shown no act at all. See D44."""
     chat = tagging([("S1", "ship-date")])
     tag_topics([record(1)], chat, 20, 40)
     assert "report" not in chat.seen[0]

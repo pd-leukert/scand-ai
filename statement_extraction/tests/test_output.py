@@ -6,7 +6,7 @@ from src.app.output import NOT_STATED, to_reconciled, to_statement
 
 DOC = "emails/07"
 
-# What the reconciled file carries once per document instead of on each statement (D44).
+# What the reconciled file carries once per document instead of on each statement (D46).
 DOCUMENTS = [
     {"id": DOC, "type": "email", "date": "2025-11-18", "people": ["Priya Nair"], "summary": "OP_ID"}
 ]
@@ -89,7 +89,7 @@ def test_a_reconciled_statement_is_its_id_a_statement_and_its_status():
 
 
 def test_a_reconciled_statement_carries_nothing_the_statements_file_dropped():
-    """The reduction D37 made to the statements file, made to this one (D44): whatever a
+    """The reduction D37 made to the statements file, made to this one (D46): whatever a
     statement says about its document, its place in it or who agreed to it is not written."""
     [nested] = reconciled_from([held("ship-date", record())])["topics"][0]["statements"]
     assert set(nested) == {"id", "claim", "speech_act", "actor", "statement_date", "status"}

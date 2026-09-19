@@ -1,6 +1,6 @@
 NOT_STATED = "Not stated"
 
-# D40's escape hatch. The topic summaries and the model's problem notes are the only model-written
+# D42's escape hatch. The topic summaries and the model's problem notes are the only model-written
 # prose in reconciled.json, and prose is what deletion cannot redact by matching a name. If
 # deletion is not built against this file in time, set this to False: the artifact then carries
 # ids and enums only. Do not ship a half-redacted summary instead.
@@ -42,12 +42,12 @@ def to_reconciled(
     topics: list[dict], problems: list[dict], generated_on: str, documents: list[dict]
 ) -> dict:
     """The reconciled file: each topic with its statements nested inside, so the backend joins
-    nothing (D40). A statement lives in exactly one topic; a relation lives on its topic, once.
+    nothing (D42). A statement lives in exactly one topic; a relation lives on its topic, once.
     The counts are taken from what is nested here, not from what went in, so they cannot
     disagree with the file.
 
     Reduced the way the statements file is (D36, D37), for the same reason and by the same
-    means (D44). What is true of every statement in a document — its type, date, people,
+    means (D46). What is true of every statement in a document — its type, date, people,
     summary — is written once, in `documents`, and the backend puts document_id and
     document_date back from the id and that table. Per statement only claim, actor, speech_act
     and statement_date are kept, as in the statements file, plus the two things only this file

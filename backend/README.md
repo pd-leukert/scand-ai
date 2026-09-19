@@ -5,7 +5,7 @@ Live web service for processing user requests. Gathers the `Statement DB` and ex
 It reads one derived file and **nothing else** — not the source documents, not extraction,
 not the model's own knowledge. By default that is the reconciled file: the statements grouped
 by topic, with the relations between them and a status on each (stale, never-true, disputed,
-unresolved, or current), worked out by the extraction job's second pass ([D40](../docs/decisions.md)).
+unresolved, or current), worked out by the extraction job's second pass ([D42](../docs/decisions.md)).
 If the statements do not support an answer, the answer is that the record is silent. See
 [CLAUDE.md](../CLAUDE.md) rule 2 and [docs/architecture.md](../docs/architecture.md).
 
@@ -34,7 +34,7 @@ Optional:
   only place that number can be set. It is what the backend measures its own prompt against —
   over it, `/query` returns 413 saying so instead of letting Ollama truncate the record
   silently and answer from the part it kept. Unset turns the guard off. Raise this and
-  `OLLAMA_CONTEXT_LENGTH` together or it protects nothing. See D43.
+  `OLLAMA_CONTEXT_LENGTH` together or it protects nothing. See D45.
 - `LLM_TIMEOUT` — seconds of silence from the model before the answering call gives up.
   Defaults to `600`. It is a read timeout (time between chunks), not a cap on the whole answer,
   but the whole record is processed as prompt before the first token, so the wait scales with
@@ -43,10 +43,10 @@ Optional:
   streamed answer ends with an `error` event (D32) and a non-streamed one returns 504 naming
   this variable, rather than a bare 500. Raise it whenever you raise `OLLAMA_CONTEXT_LENGTH`.
   The frontend's own `BACKEND_REQUEST_TIMEOUT` (frontend/README.md) should stay at or above
-  this value, or it becomes the next thing that cuts the answer off. See D43.
+  this value, or it becomes the next thing that cuts the answer off. See D45.
 - `ANSWER_SOURCE` — which derived file to answer from: `reconciled` (the default) or
   `statements`. Read at startup, so changing it means restarting the backend. In `statements`
-  mode the backend behaves as it did before D40: the model gets the flat list under the
+  mode the backend behaves as it did before D42: the model gets the flat list under the
   original prompt, which says currency is unknowable, and every citation has `status: null`
   and no receipts. It never sends `current` for statements nobody reconciled. In compose,
   `ANSWER_SOURCE=statements docker compose up` switches it; both files are on the volume.

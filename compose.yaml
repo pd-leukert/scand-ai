@@ -31,7 +31,7 @@ services:
       # OpenAI-compatible endpoint the backend uses cannot ask — `options.num_ctx` is ignored
       # there — so this is the only thing standing between the answering path and a silently
       # truncated record. Ollama's own default is 4096, which does not hold the record. Keep it
-      # equal to the backend's LLM_NUM_CTX below. See D43.
+      # equal to the backend's LLM_NUM_CTX below. See D45.
       - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-16384}
       # Only read when runtime is nvidia; inert under runc.
       - NVIDIA_VISIBLE_DEVICES=all
@@ -89,7 +89,7 @@ services:
         esac
         # The whole reconciled record goes into one prompt (D2). The full 45-document corpus is
         # well over 100k tokens, so the default context holds a few documents and no more — and
-        # the backend now refuses a question rather than answer from a truncated record (D43).
+        # the backend now refuses a question rather than answer from a truncated record (D45).
         # A GPU box is the full-corpus shape, so say so there.
         case "$$RESOLVED_RUNTIME:$$RESOLVED_CONTEXT" in
           nvidia:16384)
@@ -98,13 +98,13 @@ services:
             echo "WARNING: rather than answer from a record the model only partly saw. Set"
             echo "WARNING: OLLAMA_CONTEXT_LENGTH to what this model can serve." ;;
         esac
-        # Pulled here or it 404s in the middle of the longest job in the stack (D40).
+        # Pulled here or it 404s in the middle of the longest job in the stack (D42).
         ollama pull "$$ANSWERING_MODEL" && ollama pull "$$EXTRACTION_MODEL" && ollama pull "$$RECONCILE_MODEL"
     restart: "no"
 
   # A job, not a service: it runs once, writes the statements file and then the reconciled
   # file, and exits 0. Nothing else starts until it has, and a failure in either pass is a
-  # failed job. See docs/decisions.md D12 and D40.
+  # failed job. See docs/decisions.md D12 and D42.
   statement-extraction:
     build:
       context: .
@@ -121,13 +121,13 @@ services:
       - EXTRACTION_LLM_MODEL=${EXTRACTION_LLM_MODEL:-${LLM_MODEL:-qwen3:0.6b}}
       # Reconciliation is a reasoning pass over short contexts, not a copying task, so it can
       # want a different model from extraction. It defaults to the extraction model, which
-      # defaults to the answering one (D40).
+      # defaults to the answering one (D42).
       - RECONCILE_LLM_MODEL=${RECONCILE_LLM_MODEL:-${EXTRACTION_LLM_MODEL:-${LLM_MODEL:-qwen3:0.6b}}}
       # The reconciliation gates, passed through so they can be moved from Coolify without a
       # code change. Each one fails the job rather than writing a record it does not believe,
       # and a failed job holds the backend and frontend down with it — so on a first run over a
       # corpus these have never seen, set them to 1 to watch the numbers, then tighten. The
-      # defaults are guesses; see D40 and D42 for what each is guarding against.
+      # defaults are guesses; see D42 and D44 for what each is guarding against.
       - RECONCILE_MAX_UNTAGGED=${RECONCILE_MAX_UNTAGGED:-0.1}
       - RECONCILE_MAX_TOPICS=${RECONCILE_MAX_TOPICS:-0.35}
       - RECONCILE_MAX_TOPIC_SHARE=${RECONCILE_MAX_TOPIC_SHARE:-0.5}
@@ -155,7 +155,7 @@ services:
       # What the ollama service above is serving, repeated here because the backend cannot ask
       # it. It is not a request for a context — it is what the backend measures its own prompt
       # against, so that a record too big for the model is refused rather than half-read. The
-      # two default together and have to be raised together. See D43.
+      # two default together and have to be raised together. See D45.
       - LLM_NUM_CTX=${OLLAMA_CONTEXT_LENGTH:-16384}
       # One answer means processing the whole record as prompt, before the first token comes
       # back. Measured on the laptop stack: about 17 tokens a second, so a record at the
@@ -163,11 +163,11 @@ services:
       # to agree — whatever the size guard admits, this allows time to finish, or the guard
       # would pass a record only for the timeout to kill it. A GPU answers in seconds and never
       # comes near this. The frontend waits a little longer than the backend, so what a caller
-      # sees is the backend's own 504 rather than a severed connection. See D43.
+      # sees is the backend's own 504 rather than a severed connection. See D45.
       - LLM_TIMEOUT=${LLM_TIMEOUT:-1800}
       # Which derived file the answering path reads: "reconciled" (the default, with a status
       # on each statement) or "statements" (the flat list, no currency information). Both are
-      # on the volume. See D40.
+      # on the volume. See D42.
       - ANSWER_SOURCE=${ANSWER_SOURCE:-reconciled}
       - STATEMENTS_FILE_PATH=/data/statements.json
       - RECONCILED_FILE_PATH=/data/reconciled.json
@@ -209,7 +209,7 @@ services:
 volumes:
   # The derived artifacts: statements.json and reconciled.json, both written once by the
   # extraction job and both kept here. The backend reads one of them, chosen by ANSWER_SOURCE
-  # (reconciled by default). Deletion has to redact both (D40).
+  # (reconciled by default). Deletion has to redact both (D42).
   statements:
   # Laptop model store. The VM sets OLLAMA_DATA_DIR and binds its own directory instead,
   # leaving this one unused.

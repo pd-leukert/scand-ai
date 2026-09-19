@@ -7,7 +7,7 @@ Two audiences for this page: us, deciding what to build next, and the judges, wh
 
 **In:** document storage, one-shot statement extraction with per-document LLM calls,
 the aggregated statements file, a reconciliation pass that groups statements by topic and
-derives a link-based status for each (D40), a question-answering backend that reads only the
+derives a link-based status for each (D42), a question-answering backend that reads only the
 derived files, a Streamlit UI that shows citations and their status, and deletion by
 role-class redaction of both derived files.
 
@@ -15,7 +15,7 @@ role-class redaction of both derived files.
 
 ## Planned extensions, in the order we would build them
 
-### 1. Reconciliation pass — closes the currency gap (20%) — **built, D40**
+### 1. Reconciliation pass — closes the currency gap (20%) — **built, D42**
 
 A second LLM stage after extraction, over the aggregated statements rather than over
 documents. It groups statements by topic and writes down the relationships between them:
@@ -29,7 +29,7 @@ statement says it was wrong when recorded. A date sort cannot tell those apart, 
 why this is a reasoning pass and not a sort. The one date it reads is a guard that rejects
 a `supersedes` link running backwards in time; it creates no status.
 
-It landed before deletion did, which is the cost D40 states plainly: two derived artifacts,
+It landed before deletion did, which is the cost D42 states plainly: two derived artifacts,
 one of them holding model-written prose. Still to do: run it once on the real corpus and
 tune its two gates (`RECONCILE_MAX_UNTAGGED`, `RECONCILE_MAX_TOPICS`), whose thresholds are
 guesses until then.
@@ -76,7 +76,7 @@ redact.** The reconciled file holds a one-sentence summary per topic and a note 
 written by a model and quoted by nobody. They are exactly what the rubric's deletion band
 calls "cached summaries", and a deleted name in one of them is not a span a match will find.
 If deletion is not built against both derived files, we stop writing the prose (`KEEP_PROSE`)
-rather than claim a deletion we do not have. See D40 and CLAUDE.md rule 4.
+rather than claim a deletion we do not have. See D42 and CLAUDE.md rule 4.
 
 **Answers are bounded by extraction.** If extraction missed a statement, the agent does
 not know it exists and will say the record is silent. We cannot distinguish "the documents
@@ -89,7 +89,7 @@ decides whether D2 holds. The extraction job now prints both file sizes and a to
 at the end of every run. The first measurement, four documents on a small laptop model, was
 a 95 kB reconciled file and a 56k-token prompt, which overran Ollama's default 4096-token
 context and was silently truncated. Set the context length explicitly, and expect the full
-corpus not to fit in one prompt (D40).
+corpus not to fit in one prompt (D42).
 
 **Identity is resolved by a model, not by a registry.** One person appears under two
 spellings and two people share a first name, and until extension 3 below exists there is

@@ -4,13 +4,13 @@ statements file it was derived from (ANSWER_SOURCE, see config.py).
 Field shape follows docs/data-model.md. Not a schema until the real dataset is in hand
 (decisions.md D7) — this is the interim shape the mock files and the answering path agree
 on; see decisions.md D20. The reconciled file is the statements grouped by topic, with the
-relations between them and a status on each, written by the reconciliation pass (D40). The
+relations between them and a status on each, written by the reconciliation pass (D42). The
 statements file is the flat list before that pass.
 
 Both files carry what is true of a whole document once, on a `documents` entry, not once per
 statement (D36), and carry per statement only claim, actor{name, organization}, speech_act and
 statement_date (D37) — plus, in the reconciled file, the status and the id the relations point
-at (D44). load_statements() and load_record() are where that gets undone: id, document_id and
+at (D46). load_statements() and load_record() are where that gets undone: id, document_id and
 document_date are put back on each Statement so nothing downstream of this module (llm_client,
 schemas, the frontend) has to know the files are grouped. A citation built from either file
 therefore points at a document and a paraphrased claim, not at a line range or a verbatim quote.

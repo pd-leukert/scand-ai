@@ -1,7 +1,7 @@
 """Second pass: group the first pass's statements by topic, then reconcile each topic.
 
 Nothing here writes a new quote. Every relation, status, receipt and problem names a
-statement id the first pass already produced; anything else is dropped. See D40.
+statement id the first pass already produced; anything else is dropped. See D42.
 """
 
 import re
@@ -18,7 +18,7 @@ UNTAGGED = "untagged"
 # Topic names the model may not use. UNTAGGED is ours. The speech acts are here because they
 # are what a small model reaches for when it is asked to name a subject: "proposal" is a valid
 # slug, so nothing else rejects it, and a run comes back with every statement filed under its
-# own act. See D42.
+# own act. See D44.
 RESERVED_TOPICS = {UNTAGGED, *ACTS}
 
 # The statuses only a relation can produce. `unresolved` is not one: it falls out of a proposal
@@ -397,7 +397,7 @@ def reconcile(
         )
     # The opposite failure, and the one neither gate above can see: everything in one bucket.
     # A topic holding the whole record is not a subject, and the call that reconciles it is
-    # shown unrelated statements and asked what they have to do with each other. See D42.
+    # shown unrelated statements and asked what they have to do with each other. See D44.
     held = Counter(topic for topic in topics.values() if topic != UNTAGGED)
     if held:
         largest, size = held.most_common(1)[0]
@@ -425,8 +425,8 @@ def reconcile(
             f"({links / len(statements):.1f} each), statuses {dict(counts)}{note}"
         )
         # A model that links each statement to the next one in the list flags nearly the whole
-        # topic, and `corrects` is deliberately not date-guarded (D40), so nothing else rejects
-        # it. Density was a review flag under D40; over this share it is a gate. See D42.
+        # topic, and `corrects` is deliberately not date-guarded (D42), so nothing else rejects
+        # it. Density was a review flag under D42; over this share it is a gate. See D44.
         flagged = sum(1 for status in topic["statuses"].values() if status in LINKED_STATUSES)
         if flagged > max_flagged * len(statements):
             raise ReconcileError(
@@ -503,7 +503,7 @@ def _render(labelled: dict[str, dict], *, with_act: bool = True) -> str:
     """The statements as the model sees them.
 
     Stage A is shown no act. Asked to name a subject while looking at one, a small model copies
-    the column it was given, and every topic comes back named after a speech act (D42). Stage B
+    the column it was given, and every topic comes back named after a speech act (D44). Stage B
     keeps it, because `unresolved` is defined on proposals and questions.
     """
     lines = []
@@ -546,7 +546,7 @@ def _relations(items: list[dict], labelled: dict[str, dict], dropped: Counter[st
         if source is target:
             dropped["relation to itself"] += 1
             continue
-        # The one date this pass reads (D40). It rejects a model error and creates no status:
+        # The one date this pass reads (D42). It rejects a model error and creates no status:
         # a supersession cannot run backwards, and a same-day one passes because a transcript
         # carries only its meeting date. It is deliberately not applied to `corrects`, the
         # relation that produces never-true, so that relation stays entirely date-free.
@@ -640,7 +640,7 @@ def _invents_a_figure(text: str, labelled: dict[str, dict]) -> bool:
     artifact — the archive is full of half-said percentages — and it needs no heuristic to
     spot. Prose that contradicts the statuses, or says something false about a person in words
     the record does contain, is not reachable from here; `KEEP_PROSE` in output.py is still the
-    answer to that one. See D42.
+    answer to that one. See D44.
     """
     known = {f for record in labelled.values() for f in _figures(record["span"])}
     return bool(_figures(text) - known)

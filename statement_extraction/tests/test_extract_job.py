@@ -109,7 +109,7 @@ def test_a_run_that_reconciles_writes_both_files_and_succeeds(job: Path):
 
 
 def test_the_reconciled_file_carries_its_documents_once_and_slim_statements(job: Path):
-    """The whole path, end to end: a job's real output has the reduced shape (D44), not just
+    """The whole path, end to end: a job's real output has the reduced shape (D46), not just
     to_reconciled called by hand."""
     assert extract.main([]) == 0
     reconciled = json.loads(reconciled_file(job).read_text(encoding="utf-8"))
@@ -211,7 +211,7 @@ def test_the_run_reports_what_the_reconciled_file_costs_in_context(
     printed = capsys.readouterr().out
     assert "statements.json" in printed and "reconciled.json" in printed
     # The line is what whoever sets OLLAMA_CONTEXT_LENGTH reads, so it names the variables
-    # rather than leaving the number to be acted on by someone who knows what it means (D43).
+    # rather than leaving the number to be acted on by someone who knows what it means (D45).
     assert "tokens in the answering context" in printed
     assert "OLLAMA_CONTEXT_LENGTH and LLM_NUM_CTX above" in printed
 

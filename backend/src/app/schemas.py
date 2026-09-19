@@ -21,7 +21,7 @@ class Citation(BaseModel):
     model's output — see llm_client._resolve_citations. That is what lets us guarantee no
     invented citations regardless of what the model does with its input. The status and the
     ids that justify it are no exception: the answering model never asserts a statement's
-    currency, it reads it (D40).
+    currency, it reads it (D42).
 
     There is no location or verbatim_span: neither file carries them (D37), so this points a
     judge at a document and a paraphrased claim, not at a real line range or a verbatim quote.

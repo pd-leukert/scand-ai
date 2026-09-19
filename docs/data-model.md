@@ -88,13 +88,13 @@ act and statement date. See [decisions.md](decisions.md) D36 and D37.
 - **The date of the statement**, and separately the date of the document containing it,
   because a status report written in June can describe a decision made in March.
 
-Dates alone do not solve currency. The reconciliation pass (D40, below) reads them for
+Dates alone do not solve currency. The reconciliation pass (D42, below) reads them for
 exactly one thing: ordering statements for the model, and rejecting a `supersedes` link
 that runs backwards in time. See [roadmap.md](roadmap.md).
 
 ## What the reconciliation pass adds
 
-A second pass over the aggregated statements (D40) writes a second file. It does not change
+A second pass over the aggregated statements (D42) writes a second file. It does not change
 a statement; it wraps them. A plain-words walkthrough with an annotated example is in
 [reconciled-file.md](reconciled-file.md).
 
@@ -115,7 +115,7 @@ a statement; it wraps them. A plain-words walkthrough with an annotated example 
   conflict, unanswered), each naming statement ids. These are the only model-written prose
   in the file, and each has to name real statements or is dropped.
 
-**The file is reduced the way the statements file is (D36, D37, D44).** What is true of a
+**The file is reduced the way the statements file is (D36, D37, D46).** What is true of a
 whole document — its id, type, date, people and summary — is written once, in a `documents`
 table. A statement carries only `id`, `claim`, `actor` (name, organization), `speech_act`,
 `statement_date` and its `status`: no `document_id`, `document_date`, location, verbatim span,
@@ -148,7 +148,7 @@ judge. (Before D37 this warning was about the verbatim span; there is no verbati
 more, but the claim is exactly as capable of quoting a name back at a judge, so the same
 rule applies to it.)
 
-Since D40 there are **two** derived files, and both have to be redacted. The reconciled
+Since D42 there are **two** derived files, and both have to be redacted. The reconciled
 file nests every statement, so it repeats every span and actor field the statements file
 has. It also holds model-written prose — the topic summaries and problem notes — where a
 name can sit in a sentence rather than in a span, and where matching the span will not find

@@ -31,7 +31,7 @@ def statement(n: int, doc: str = DOC, *, act: str = "report", status: str = "cur
 
 
 def reconciled(tmp_path: Path, **parts) -> str:
-    """A reconciled file in the shape extraction writes (D44): two documents, and a topic in
+    """A reconciled file in the shape extraction writes (D46): two documents, and a topic in
     which statement 12 supersedes statement 1 — ids where one is the start of the other."""
     body = {
         "documents": [
@@ -146,7 +146,7 @@ def test_a_relation_is_read_on_the_statement_it_lands_on_and_a_conflict_on_both(
 
 def test_prose_the_model_wrote_is_not_sent(record):
     """Summaries and problem notes say nothing the statuses and links do not, and they are the
-    text a deleted name can hide in (D45)."""
+    text a deleted name can hide in (D47)."""
     sent = _build_messages("q", record)[1]["content"]
     assert "The field was dropped." not in sent
     assert "still reads as if" not in sent
@@ -172,7 +172,7 @@ def test_anything_the_model_cites_that_we_did_not_hand_out_is_dropped(record):
 def test_a_model_reply_becomes_citations_the_frontend_can_render(record):
     """The whole path from what the model writes to what the frontend reads: the reply cites
     aliases, the backend turns them into citations from its own record, and the JSON that goes
-    out carries every field frontend/app.py's render_source_row reads (D45 changed the model's
+    out carries every field frontend/app.py's render_source_row reads (D47 changed the model's
     view of the record, not this)."""
     raw = f'It was superseded [1] by the later one [2].\n{CITATION_DELIMITER}\n["s1", "s2"]'
     prose, cited = _split_response(raw)

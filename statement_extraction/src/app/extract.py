@@ -1,5 +1,5 @@
 """Run the extraction job: read the corpus, ask the model, write the statements file, then
-reconcile the statements by topic and write the reconciled file (D40).
+reconcile the statements by topic and write the reconciled file (D42).
 
 EXTRACTION_LLM_MODEL=<model> uv run python -m src.app.extract [DOC_ID_SUBSTRING ...]
 """
@@ -54,7 +54,7 @@ def _write_json(path: Path, documents: list[dict]) -> None:
 def _document_head(doc: Document) -> dict:
     """What is true of every statement in a document, carried once. Both files use it: the
     statements file puts the statements inside it, and the reconciled file keeps it as a table
-    and nests the statements under their topics instead (D44)."""
+    and nests the statements under their topics instead (D46)."""
     return {
         "id": doc.doc_id,
         "type": doc.doc_type,
@@ -87,7 +87,7 @@ def main(filters: list[str]) -> int:
     timeout = float(os.environ.get("EXTRACTION_TIMEOUT", "600"))
     corpus = Path(os.environ.get("CORPUS_DIR", Path(__file__).parents[3] / "input"))
     out = Path(os.environ.get("STATEMENTS_FILE_PATH", "statements.json"))
-    # Reconciliation is a second pass with its own model, defaulting to the first pass's (D40).
+    # Reconciliation is a second pass with its own model, defaulting to the first pass's (D42).
     reconcile_model = os.environ.get("RECONCILE_LLM_MODEL") or model
     reconcile_num_ctx = int(os.environ.get("RECONCILE_NUM_CTX", "8192"))
     reconcile_batch = int(os.environ.get("RECONCILE_BATCH_STATEMENTS", "20"))
@@ -115,7 +115,7 @@ def main(filters: list[str]) -> int:
 
     # What reconciliation reads. The per-document files below hold the written shape
     # (to_statement), which has dropped the fields the second pass needs, so the raw records
-    # are kept here alongside them (D40).
+    # are kept here alongside them (D42).
     records: list[dict] = []
     empty: list[str] = []
     with httpx.Client(base_url=host, timeout=timeout) as client:
@@ -228,13 +228,13 @@ def _file_size(path: Path) -> str:
 # folds the shrink and the tokenizer into one number. Measured end to end on qwen3:0.6b — a
 # 114 kB reconciled file became a 29,356-token prompt, or 3.9 bytes a token. Rounded down, so
 # the figure printed errs high: this number is read by whoever is choosing
-# OLLAMA_CONTEXT_LENGTH, and guessing that low is the failure D43 exists to stop.
+# OLLAMA_CONTEXT_LENGTH, and guessing that low is the failure D45 exists to stop.
 RECONCILED_BYTES_PER_TOKEN = 3.5
 
 
 def _size_report(statements_path: Path, reconciled_path: Path) -> str:
     """D2's ceiling is unmeasured until something measures it. The whole reconciled file goes
-    into the answering context as plain JSON (D43), so report what that actually costs — this
+    into the answering context as plain JSON (D45), so report what that actually costs — this
     line is what OLLAMA_CONTEXT_LENGTH and LLM_NUM_CTX have to be set above.
 
     Rough on purpose: another model's tokenizer will differ, and the estimate deliberately errs
@@ -246,7 +246,7 @@ def _size_report(statements_path: Path, reconciled_path: Path) -> str:
         f"{statements_path.name} {before // 1000} kB, {reconciled_path.name} {after // 1000} kB "
         f"({(after - before) / before:+.0%}), about {tokens // 1000}k tokens in the answering "
         f"context — set OLLAMA_CONTEXT_LENGTH and LLM_NUM_CTX above {tokens // 1000}k, or the "
-        "backend will refuse every question (D43)."
+        "backend will refuse every question (D45)."
     )
 
 

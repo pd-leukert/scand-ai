@@ -9,10 +9,10 @@ mangles while copying it out of the record, simply resolves to nothing and is dr
 is what CLAUDE.md means by "if code cannot guarantee [a citation], it must emit no
 citation rather than an approximate one" — see decisions.md D21. A statement's status, and
 the ids that justify it, are copied the same way: the model reads a currency, it never
-asserts one (D40).
+asserts one (D42).
 
 The record is the reconciled file by default. ANSWER_SOURCE=statements answers from the flat
-statements file instead, exactly as before D40: no status in the context, the prompt that says
+statements file instead, exactly as before D42: no status in the context, the prompt that says
 currency is unknowable, and `status: null` on every citation.
 """
 
@@ -85,7 +85,7 @@ JSON array of the statement ids the markers refer to, in marker order, e.g. \
 the statements you were given — never invent one.
 """
 
-# For ANSWER_SOURCE=statements: the prompt as it was before D40. Nothing was reconciled, so the
+# For ANSWER_SOURCE=statements: the prompt as it was before D42. Nothing was reconciled, so the
 # model is told currency is unknowable rather than shown a status that no pass produced.
 STATEMENTS_ONLY_PROMPT = f"""You are the answering agent for a rollout decision record.
 
@@ -123,7 +123,7 @@ def _aliases(record: Record) -> dict[str, str]:
 
     The model is shown these and never a real id. A real id is a document path and a position
     — about twenty tokens, repeated in every relation, problem and summary that names the
-    statement, which measured at over a quarter of the reconciled payload (D44). It is the same
+    statement, which measured at over a quarter of the reconciled payload (D46). It is the same
     device reconcile.py uses on its side (S1, S2, …), and for the same reason: an alias the
     model returns that we did not hand out resolves to nothing and is dropped, so the citation
     trust boundary is exactly where it was (D21). Derived from the record on each call, so it is
@@ -135,7 +135,7 @@ def _aliases(record: Record) -> dict[str, str]:
 def _statement_view(statement: Statement, alias: str) -> dict:
     """What the model is shown of one statement in the statements-file mode, which is not
     reconciled and so has no status. Nothing document-level (the document is the group it sits
-    in) and nothing the file does not carry (D37). The reconciled mode uses rows instead (D45)."""
+    in) and nothing the file does not carry (D37). The reconciled mode uses rows instead (D47)."""
     view = {
         "id": alias,
         "claim": statement.claim,
@@ -173,11 +173,11 @@ def _links(topic: Topic, aliases: dict[str, str]) -> dict[str, list[str]]:
 
 
 def _reconciled_payload(record: Record, aliases: dict[str, str]) -> dict:
-    """The record as the model is shown it (D45): a speaker table once, a column list once, and
+    """The record as the model is shown it (D47): a speaker table once, a column list once, and
     one array per statement instead of one object — the keys were most of what each statement
     cost. Nothing the model could cite is dropped: statements, their status, and the relations
     that produced it. Topic summaries and problem notes are not sent, because the statuses and
-    links say everything they say, and they are the model-written prose D40 could not redact.
+    links say everything they say, and they are the model-written prose D42 could not redact.
     """
     people: dict[tuple[str, str], str] = {}
 
@@ -306,7 +306,7 @@ def context_shortfall(question: str) -> tuple[int, int] | None:
     endpoint has no per-request `num_ctx` — the server's OLLAMA_CONTEXT_LENGTH decides. So the
     backend cannot make the window bigger from here; it can only refuse to answer from a record
     the model would only partly see. LLM_NUM_CTX is what the server is configured to serve, and
-    leaving it unset turns the guard off. See D43.
+    leaving it unset turns the guard off. See D45.
     """
     settings = get_settings()
     if not settings.llm_num_ctx:

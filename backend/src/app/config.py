@@ -20,10 +20,10 @@ class Settings:
     llm_model: str | None
     llm_api_key: str | None
     # What the Ollama server is configured to serve, not something we can ask for per request:
-    # the OpenAI-compatible endpoint has no num_ctx. Unset turns the size guard off. See D43.
+    # the OpenAI-compatible endpoint has no num_ctx. Unset turns the size guard off. See D45.
     llm_num_ctx: int | None
     # Seconds to wait on the model. Prompt processing is linear in the size of the record, so a
-    # laptop CPU needs far longer than a GPU does. See D32 and D43.
+    # laptop CPU needs far longer than a GPU does. See D32 and D45.
     llm_timeout: float
     answer_source: Literal["reconciled", "statements"]
     statements_file: str

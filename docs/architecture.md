@@ -71,7 +71,7 @@ The cost of this choice is that no single extraction call can see that a later d
 reversed an earlier decision — which is exactly why currency needs a second pass over the
 aggregated statements.
 
-That second pass runs in the same job, strictly after the first has finished (D40). It tags
+That second pass runs in the same job, strictly after the first has finished (D42). It tags
 every statement with a topic, then reconciles each topic in one model call: which statements
 supersede, correct, contradict or answer which. Code derives a status for each statement
 from the links that survive validation — never from dates — and writes the result, with the
@@ -153,7 +153,7 @@ otherwise.
   record", not an improvised read of the source document.
 - **The derived files are the only things the backend reads** — one of them at a time, the
   reconciled file by default. Not the PDFs. This is what makes deletion meaningful: "gone
-  from everything we derived" is a claim we can verify because we know the list. Since D40
+  from everything we derived" is a claim we can verify because we know the list. Since D42
   that list has two entries, and the second holds model-written prose.
 - **The frontend holds no logic.** Anything it computes is something we would have to
   delete from twice.
@@ -165,7 +165,7 @@ deleted person could survive, and the MVP is small partly so that deletion stays
 When they arrive, deletion has to cascade to them — that is a condition of adding them, not
 a follow-up task.
 
-The reconciled file broke that rule's letter on purpose (D40): it is a second derived
+The reconciled file broke that rule's letter on purpose (D42): it is a second derived
 artifact, with model-written summaries in it, and deletion is not built yet. The decision
 says so plainly, names deletion covering both files as the condition it depends on, and
 keeps a one-line switch (`KEEP_PROSE`) to stop writing the prose if that condition is not

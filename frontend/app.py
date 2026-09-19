@@ -169,7 +169,7 @@ def document_label(document_id: str) -> str:
 
 # status -> (pill label, css class). "current" has no entry on purpose: a pill is a warning, and
 # everything the record does not flag is current. The status and the ids behind it are worked out
-# by the backend (D40); this only shows them.
+# by the backend (D42); this only shows them.
 STATUS_PILLS = {
     "stale": ("Superseded", "sc-pill-stale"),
     "never-true": ("Never true", "sc-pill-never-true"),
@@ -272,7 +272,7 @@ def render_source_row(citation: dict) -> None:
     speech_act = html.escape(str(citation.get("speech_act", "")).capitalize())
     status_html = status_pill(citation.get("status", "current"))
     claim = html.escape(citation.get("claim", ""))
-    # The ids that put a status there (D40), so a flagged citation shows its own justification.
+    # The ids that put a status there (D42), so a flagged citation shows its own justification.
     # Shown, not computed: which statements those are is decided by the backend.
     receipts = citation.get("status_receipts") or []
     receipt_html = (

@@ -4,7 +4,7 @@ Offline job that turns the source documents into two files, in two passes. It ru
 
 1. **Extraction.** Walks `input/` one document at a time, asks the model for that document's
    statements, and writes the statements file.
-2. **Reconciliation** (D40). Strictly after the first pass has finished. Stage A tags every
+2. **Reconciliation** (D42). Strictly after the first pass has finished. Stage A tags every
    statement with a topic, in batches, showing each batch the topics already in use so the
    vocabulary converges. Stage B makes one call per topic, and the model writes the relations
    it can see between that topic's statements: `supersedes`, `corrects`, `conflicts-with`,
@@ -87,12 +87,12 @@ what happened.
 - `RECONCILE_MAX_TOPIC_SHARE` — the share of all statements one topic may hold before the run
   fails. Defaults to 0.5. The same failure from the other end: everything in one bucket finds
   no real links either, because each reconciliation call is then shown unrelated statements.
-  A small run legitimately has one big topic — set it to 1 for a smoke run. See D42.
+  A small run legitimately has one big topic — set it to 1 for a smoke run. See D44.
 - `RECONCILE_MAX_FLAGGED` — per topic, the share of statements a relation may put in
   `never-true`, `stale` or `disputed` before the run fails. Defaults to 0.5. A model that
   links each statement to the next one in the list flags nearly everything, and `corrects` is
   not date-guarded, so nothing else rejects it. `unresolved` does not count towards this: it
-  comes from a proposal nobody answered, not from a link. See D42.
+  comes from a proposal nobody answered, not from a link. See D44.
 
 These are deliberately separate from the backend's `LLM_BASE_URL`/`LLM_MODEL`: extraction
 and answering are allowed to use different models, and the working agreement says never to

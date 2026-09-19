@@ -66,7 +66,7 @@ position: [architecture.md](architecture.md#residency).
 
 > **"Get three or four of the five requirements working properly and that's a real entry.
 > We'd rather see that than five half-built ones."** This sentence was the licence for D4
-> (since superseded by D40) — shipping without a currency signal is an explicitly acceptable
+> (since superseded by D42) — shipping without a currency signal is an explicitly acceptable
 > entry; faking one is not. We now ship one, and it is derived from links, not dates.
 
 ## How it is scored
