@@ -1,0 +1,6 @@
+# The custom styles in app.py (STYLE) only define a light palette, so letting Streamlit
+# auto-follow the OS/browser theme leaves native widgets (e.g. the ask-form input) in
+# Streamlit's own dark theme while everything else around them stays light. Pinning the
+# base theme removes dark mode entirely instead of chasing every widget with overrides.
+[theme]
+base = "light"

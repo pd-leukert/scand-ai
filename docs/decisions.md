@@ -1385,3 +1385,146 @@ is ever added on the inference side (D40's own *Cost* note already flagged the b
 move as relevant to that), this ordering is the one to revisit — it optimizes for the
 single-question case at the expense of the repeated-question-same-corpus case, and D2 never
 measured either against real latency numbers.
+
+---
+
+## D42 — 2026-09-19 — Accepted
+**Frontend polish pass: header now shares the content column's margins, the hero and
+question titles get `!important` so they actually render in the brand typeface, dark mode
+is removed via Streamlit's `theme.base`, and the ask button's arrow glyph is optically
+centered.**
+
+Four requested fixes, all CSS-only changes to `frontend/app.py` plus one new
+`.streamlit/config.toml`. Two of them turned out to need more than the fix first asked for,
+and fixing one of them surfaced a fifth bug plus a sanitizer gotcha worth its own note below:
+
+- **Header margin.** `.st-key-header`'s row spanned the full viewport with a fixed 32px
+  padding, while the hero/answer content is a `max-width` column centered with
+  `margin:0 auto`. On any viewport wider than the content column the two edges disagreed —
+  the logo sat near the browser edge while the content started well to its right. Fixed by
+  giving the header row the same `max-width:880px` and `margin:0 auto` as
+  `.st-key-answer_page`, so both start at the same x regardless of viewport width.
+
+- **Hero title wrapping.** The request was "make it wider so it doesn't wrap." Checked
+  first, and it wasn't actually a width problem: `.sc-hero-title` was never rendering as
+  Space Grotesk 32px. Streamlit injects its own `<hash> h1{font-size:2.75rem;
+  font-weight:700}` rule scoped to the container, at the same specificity as `.sc-hero-title`
+  alone (one class, one element each), and it happened to win on source order. The title was
+  silently rendering in Streamlit's default 44px Source Sans Bold — which is why it wrapped;
+  at that size "Ask about your workshop notes" doesn't fit the 576px available.
+  `.sc-question` (the "You asked" heading) had the identical bug.
+  Rejected: widening the hero column until the *wrong* font happened to fit. That "fixes"
+  the wrap while leaving the title in the wrong typeface, silently — a worse outcome than the
+  one reported.
+  Fixed: added `!important` to `.sc-hero-title` and `.sc-question`, the pattern this file
+  already uses to beat Streamlit's own specificity (see the `stVerticalBlock` gap comment in
+  `STYLE`). With the intended 32px Space Grotesk actually applied it fits on one line with
+  room to spare (519px natural width in 576px available). `.st-key-hero` was still widened,
+  640px → 720px, per the literal ask — headroom for longer questions, not the fix itself.
+
+- **Dark mode.** No `prefers-color-scheme` rule exists anywhere in `STYLE`; Streamlit was
+  auto-following the OS/browser theme for its own native widgets regardless, visible as a
+  dark ask-input box sitting in an otherwise light page. Rejected: chasing every native
+  widget with a CSS override as dark-mode cases turn up — reactive, and the next native
+  widget added reopens the same bug. Fixed with `frontend/.streamlit/config.toml`
+  (`[theme]` / `base = "light"`), which removes dark mode at the source instead of fighting
+  its symptoms one widget at a time.
+
+- **Button arrow.** First attempt, `.st-key-ask_form button p{transform:translateY(-4px)}`,
+  silently did nothing — `transform` does not apply to a plain `display:inline` box per the
+  CSS Transforms spec (only replaced or block/inline-block elements are "transformable"),
+  and `<p>` is inline by default. Added `display:inline-block` alongside the transform so it
+  actually takes effect. Verified by cropping a screenshot to just the button and measuring
+  the glyph's ink pixels against the circle's center: 4.4px below center before the fix,
+  ~1px above after.
+
+- **Subtitle centering.** Caught after the fact ("the title is shifted to the left"):
+  `.sc-hero-sub` has the same specificity collision as the heading bug above, on the `<p>`
+  tag instead of `<h1>` — a Streamlit-generated rule resets `margin-left`/`margin-right` to
+  `0`, which silently cancelled the `margin:12px auto 0` centering trick and left the
+  subtitle pinned to the box's left edge instead of centered under the title. Same fix:
+  `!important`.
+
+**A second, unrelated bug turned up while writing that last fix, worth recording on its
+own:** the first attempt at the subtitle fix's explanatory comment wrote `` on the `<p>` tag
+this time `` — a literal `<p>` inside a CSS `/* */` comment, inside the string passed to
+`st.html()`. Streamlit's `st.html()` sanitizer does not treat `<style>` contents as opaque
+raw text the way a browser parsing real HTML would; it appears to scan the whole `body`
+string for tag-like patterns, found the `<p>` sitting inside the comment, and silently
+dropped the *entire* `STYLE` block as a result — no exception, no visible error, just a
+completely unstyled page. Confirmed with a minimal isolated `st.html()` repro and by
+bisecting the change hunk by hand: the comment alone was fine, the two added `!important`s
+alone were fine, only the combination (comment containing a literal tag, in a string that
+also changed) reproduced it. Fixed by rewording the comment to describe the element without
+angle brackets. **Practical rule for anyone editing `STYLE` in this file: never write a
+literal `<tag>` inside a CSS comment, even in prose — spell it out instead ("a paragraph
+tag") or the whole style payload can vanish with no error to point at.**
+
+*Cost:* the `!important` list on heading/paragraph rules grows by three; a fourth custom
+rule added later without checking whether it collides with a Streamlit-generated rule the
+same way will silently lose again — nothing catches this automatically, it was found by
+diffing computed styles in a browser, not by inspection, and would be easy to miss next
+time. `theme.base="light"` forecloses ever offering a real dark theme later without a
+deliberate `[theme.dark]` build-out, which nobody has asked for. And the sanitizer gotcha
+above has no test guarding it — a future edit can reintroduce it, and the only symptom is a
+blank, unstyled page with nothing in the browser console or Streamlit's log to point at
+`STYLE`.
+
+---
+
+## D43 — 2026-09-19 — Accepted *(extends D42)*
+**One `--content-width` column for the header, the ask state and the answer state — the
+hero widens from 720px to 880px to join it — and a loading indicator holds the answer card
+from submit until the backend's first token.**
+
+Second pass on the same frontend, from the same direction: "the header is not aligned with
+the search bar", "the strange grey background in the input", "the logo has no bottom
+margin", "just make it look polished".
+
+- **One column.** The header was 880px (D42) and the hero 720px, so the brand sat 80px left
+  of the ask bar — D42 fixed the header against the *answer* column and left the ask state
+  out of step. Now `--content-width:880px` and `--gutter:32px` are tokens on `:root` and all
+  three consumers read them, so the brand, the ask bar and every answer line start at the
+  same x. Rejected: aligning the header to the hero's 720px instead, which just moves the
+  disagreement to the answer page; and hard-coding 880 in three places again, which is how
+  the two drifted apart in the first place. The cost is that the hero is no longer the
+  narrow centred box the mockup had — the ask bar is now 816px wide. Taken deliberately:
+  alignment across the two states reads as more finished than a narrower empty state.
+
+- **Three Streamlit defaults were quietly eating the spacing.** All the same shape as D42's
+  specificity bug — Streamlit styling our own markup — and all found by measuring, not
+  reading: (1) every markdown container carries `margin-bottom:-16px` to cancel a trailing
+  markdown paragraph's margin, but every container here holds our own HTML with explicit
+  margins, so it just ate 16px — that is why the logo had no room under it and why the
+  hero's 32px gap rendered as 16px; (2) the generated heading rule also carries
+  `padding:1.25rem 0 1rem`, which D42's margin overrides never touched, so both headings
+  sat in 36px of padding that was not in the design; (3) the grey field is painted by
+  Streamlit's `stTextInputRootElement` wrapper, not the `input` we were overriding, so the
+  override left a grey box inside the white pill. Header padding is now 20px, which makes
+  the header exactly the 73px the hero's `min-height: calc(100vh - 73px)` had always
+  assumed. Streamlit's own "Press Enter to submit form" hint inside the pill is hidden too —
+  the `.sc-hint` line under the bar already says it.
+
+- **Loading indicator.** The answer card was empty between submit and the first token,
+  which on a slow local model reads as broken. Three pulsing dots plus "Reading the record…"
+  are written into the same `st.empty()` the streamed answer uses, so the first token
+  overwrites them — no flag, no second placeholder, no "is it done yet" state to keep in
+  sync. Its `min-height` matches `.sc-answer-text`'s line-height so the card does not jump
+  when the text arrives. Rejected: `st.spinner`, which renders Streamlit's own chrome in the
+  middle of a card we style by hand; and clearing the placeholder on a `first_chunk` flag,
+  which is a branch that exists only to do what overwriting already does.
+
+Verified against a throwaway SSE server speaking the backend's wire format with a 6s delay
+before its first token (the real backend needs Ollama): the indicator is present during the
+wait and gone on the first token, and the loading, streaming and answered states were each
+screenshotted.
+
+*Cost:* the hero's ask bar is wide, and if anyone wants the narrow empty state back, that is
+a second column token and the alignment argument above has to be re-made. The three
+Streamlit-default overrides are pinned to selectors (`stTextInputRootElement`,
+`InputInstructions`, the markdown container's margin) that are Streamlit internals, not a
+public API — a Streamlit upgrade can rename any of them and the symptom would be cosmetic
+and silent, exactly like the bugs they fix. And "Reading the record…" is copy nobody has
+reviewed; it is accurate about what the backend does (D2: the whole statements file, no
+retrieval), but it is the first user-facing sentence we have written that is not in the
+mockup.

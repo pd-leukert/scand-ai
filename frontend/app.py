@@ -30,6 +30,9 @@ STYLE = """
   --bg:#fafafa; --surface:#ffffff; --text:#131c26; --text-muted:#5b6572; --text-faint:#8a93a0;
   --border:#e4e8ec; --border-strong:#d3d9e0; --accent:#1668a5; --accent-hover:#0f5488;
   --accent-soft:#e4eef7; --navy:#0b3049; --chip-bg:#f1f3f5;
+  /* One column the header, the ask state and the answer state all share, so the brand,
+     the ask bar and every answer line start at the same x. Change it in one place. */
+  --content-width:880px; --gutter:32px;
 }
 html, body, .stApp{background:var(--bg) !important;color:var(--text);
   font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;}
@@ -40,11 +43,19 @@ html, body, .stApp{background:var(--bg) !important;color:var(--text);
    !important on every section override below is what actually wins. */
 div[data-testid="stVerticalBlock"]{gap:0;}
 button p{margin:0;}
+/* Streamlit pulls every markdown container up by 16px to cancel the bottom margin of a
+   trailing markdown paragraph. Every container here holds our own HTML with explicit
+   margins, so there is nothing to cancel and the pull just eats the spacing below — the
+   header's logo and the gap under the hero subtitle both lost 16px to it. */
+[data-testid="stMarkdownContainer"]{margin-bottom:0 !important;}
 
 /* header bar */
 .st-key-header{background:var(--surface);border-bottom:1px solid var(--border);}
+/* 20px + a 32px logo + 20px + the 1px border below = the 73px the hero's min-height
+   already subtracts. */
 .st-key-header [data-testid="stHorizontalBlock"]{align-items:center !important;
-  padding:16px 32px !important;justify-content:space-between !important;}
+  max-width:var(--content-width) !important;width:100% !important;margin:0 auto !important;
+  padding:20px var(--gutter) !important;justify-content:space-between !important;}
 .st-key-header [data-testid="stHorizontalBlock"] > div{
   flex:0 0 auto !important;width:auto !important;}
 .sc-brand{display:flex;align-items:center;gap:10px;}
@@ -67,10 +78,17 @@ button p{margin:0;}
 /* hero / ask state */
 .st-key-hero{min-height:calc(100vh - 73px);display:flex !important;flex-direction:column !important;
   align-items:center !important;justify-content:center !important;gap:32px !important;
-  max-width:640px;margin:0 auto;padding:32px;}
-.sc-hero-title{margin:0;text-align:center;font-family:'Space Grotesk',sans-serif;
-  font-size:32px;line-height:40px;font-weight:600;color:var(--text);}
-.sc-hero-sub{margin:12px auto 0;text-align:center;max-width:520px;
+  max-width:var(--content-width);margin:0 auto;padding:32px var(--gutter);}
+/* Streamlit's own generated heading rule (element+class) ties this class selector's
+   specificity, and wins on source order — !important is what actually wins here, same
+   as the vertical-block gap override above. */
+.sc-hero-title{margin:0 !important;padding:0 !important;text-align:center !important;
+  font-family:'Space Grotesk',sans-serif !important;font-size:32px !important;
+  line-height:40px !important;font-weight:600 !important;color:var(--text) !important;}
+/* Same Streamlit collision as .sc-hero-title above, on this paragraph instead of a
+   heading: a higher-specificity generated rule resets margin-left/right to 0, which was
+   silently killing the auto-centering and pinning this flush to the left edge. */
+.sc-hero-sub{margin:12px auto 0 !important;text-align:center !important;max-width:520px;
   font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:22px;color:var(--text-muted);}
 
 .st-key-ask_form{width:100%;background:var(--surface);border:1px solid var(--border-strong);
@@ -78,24 +96,42 @@ button p{margin:0;}
 .st-key-ask_form [data-testid="stForm"]{border:none !important;padding:0 !important;}
 .st-key-ask_form [data-testid="stHorizontalBlock"]{align-items:center !important;
   gap:8px !important;}
+/* Streamlit's own "Press Enter to submit form" hint appears inside the pill on focus,
+   saying the same thing as the .sc-hint line already under it. */
+.st-key-ask_form [data-testid="InputInstructions"]{display:none !important;}
+/* The grey field is painted by Streamlit's wrapper, not the input — overriding only the
+   input leaves a grey box sitting inside the white pill. Clearing the wrapper (in every
+   state, including focus) lets the pill itself be the only visible surface. */
+.st-key-ask_form [data-testid="stTextInputRootElement"],
+.st-key-ask_form [data-testid="stTextInputRootElement"]:focus-within{
+  background:transparent !important;border:none !important;box-shadow:none !important;}
 .st-key-ask_form input{border:none !important;background:transparent !important;
   box-shadow:none !important;font-family:'IBM Plex Sans',sans-serif;font-size:17px;
   color:var(--text) !important;padding:8px 0 !important;}
 .st-key-ask_form button{width:44px;height:44px;border-radius:999px !important;
   border:none !important;background:var(--navy) !important;padding:0 !important;}
 .st-key-ask_form button:hover{background:var(--accent-hover) !important;}
-.st-key-ask_form button p{color:#fff !important;font-size:18px !important;line-height:1;}
+.st-key-ask_form button p{color:#fff !important;font-size:18px !important;line-height:1;
+  /* "↑" sits low in its own em box (the glyph reserves space for descenders it doesn't
+     have) — nudge it up so it looks centered in the round button. transform is a no-op
+     on a plain inline box, so this also needs inline-block to take effect. */
+  display:inline-block;transform:translateY(-4px);}
 .sc-hint{margin-top:8px;text-align:center;font-family:'IBM Plex Sans',sans-serif;
   font-size:13px;color:var(--text-faint);}
 
 /* answer state */
-.st-key-answer_page{max-width:880px;margin:0 auto;padding:32px 32px 64px;
+.st-key-answer_page{max-width:var(--content-width);margin:0 auto;padding:32px var(--gutter) 64px;
   display:flex !important;flex-direction:column !important;gap:24px !important;}
 .st-key-sources_list{display:flex !important;flex-direction:column !important;gap:10px !important;}
 .sc-asked-label{font-family:'IBM Plex Sans',sans-serif;font-size:13px;font-weight:600;
   letter-spacing:0.01em;color:var(--text-muted);}
-.sc-question{margin:4px 0 0;font-family:'Space Grotesk',sans-serif;font-size:20px;
-  line-height:28px;font-weight:600;color:var(--text);}
+/* Same generated heading rule again: it also carries padding:1.25rem 0 1rem, which the
+   margin overrides above never touched, so both headings were sitting in 36px of Streamlit
+   padding on top of their own spacing. Zero it and let the margins here be the rhythm. */
+.sc-question{margin:4px 0 0 !important;padding:0 !important;
+  font-family:'Space Grotesk',sans-serif !important;
+  font-size:20px !important;line-height:28px !important;font-weight:600 !important;
+  color:var(--text) !important;}
 
 .sc-card, .st-key-live_card{background:var(--surface);border:1px solid var(--border);
   border-radius:16px;padding:24px;box-shadow:0 1px 2px rgba(9,20,31,0.08);}
@@ -109,6 +145,17 @@ button p{margin:0;}
   color:var(--text-muted);}
 .sc-answer-text{margin:0;font-family:'IBM Plex Sans',sans-serif;font-size:17px;
   line-height:27px;color:var(--text);}
+/* Shown while we wait for the backend's first token. min-height matches .sc-answer-text's
+   line-height so the card does not jump when the answer replaces this. */
+.sc-loading{display:flex;align-items:center;gap:10px;min-height:27px;}
+.sc-dots{display:flex;align-items:center;gap:5px;}
+.sc-dots span{width:7px;height:7px;border-radius:50%;background:var(--accent);opacity:0.25;
+  animation:sc-dot 1.2s ease-in-out infinite;}
+.sc-dots span:nth-child(2){animation-delay:0.16s;}
+.sc-dots span:nth-child(3){animation-delay:0.32s;}
+.sc-loading-label{font-family:'IBM Plex Sans',sans-serif;font-size:14px;
+  color:var(--text-muted);}
+@keyframes sc-dot{0%,70%,100%{opacity:0.25;}35%{opacity:1;}}
 .sc-badge-inline{display:inline-flex;align-items:center;justify-content:center;min-width:17px;
   height:17px;padding:0 4px;margin:0 1px;border-radius:6px;background:var(--accent-soft);
   color:var(--accent);font-family:'IBM Plex Sans',sans-serif;font-size:12px;font-weight:500;
@@ -145,6 +192,13 @@ button p{margin:0;}
   font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:20px;color:var(--text);}
 </style>
 """.replace("__FONTS_HREF__", FONTS_HREF)
+
+LOADING_HTML = (
+    '<div class="sc-loading" role="status" aria-live="polite">'
+    '<div class="sc-dots"><span></span><span></span><span></span></div>'
+    '<span class="sc-loading-label">Reading the record…</span>'
+    "</div>"
+)
 
 BRAND_HTML = (
     '<div class="sc-brand">'
@@ -334,6 +388,9 @@ if not st.session_state.question:
                     unsafe_allow_html=True,
                 )
                 answer_placeholder = st.empty()
+                # Held until the backend's first token, which overwrites the placeholder.
+                # A local model can be slow to start, and an empty card reads as broken.
+                answer_placeholder.markdown(LOADING_HTML, unsafe_allow_html=True)
                 result: dict = {}
                 answer = ""
                 for chunk in stream_backend(question, result):
