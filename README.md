@@ -60,6 +60,20 @@ Python everywhere, `uv` for dependencies and running things, one container per s
 Read [CLAUDE.md](CLAUDE.md) before your first commit — it is short, and the rules in it
 are the ones that protect our score.
 
+## Running the whole thing
+
+```bash
+docker compose up --build
+```
+
+Statement extraction runs first; the backend and the frontend do not start until it has
+finished and exited. The UI is then on <http://localhost:8501>. The backend is not
+published — it is reachable from inside the compose network only, which is what
+[architecture.md](docs/architecture.md) asks for.
+
+Ollama is not in the compose file yet, and nothing calls a model. See
+[decision D13](docs/decisions.md).
+
 ## Status
 
 Pre-implementation. The documents are not in hand yet and nothing is built. These
