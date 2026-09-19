@@ -30,6 +30,11 @@ STYLE = """
   --bg:#fafafa; --surface:#ffffff; --text:#131c26; --text-muted:#5b6572; --text-faint:#8a93a0;
   --border:#e4e8ec; --border-strong:#d3d9e0; --accent:#1668a5; --accent-hover:#0f5488;
   --accent-soft:#e4eef7; --navy:#0b3049; --chip-bg:#f1f3f5;
+  --danger:#8a2c2c; --danger-hover:#6f2323;
+  /* Light only, on purpose: .streamlit/config.toml pins Streamlit's own widgets to the same
+     tokens, and this pins what the browser paints for us — form controls, scrollbars,
+     autofill — so a dark-mode laptop cannot turn half the page dark (D48). */
+  color-scheme:light;
 }
 html, body, .stApp{background:var(--bg) !important;color:var(--text);
   font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;}
@@ -39,6 +44,12 @@ html, body, .stApp{background:var(--bg) !important;color:var(--text);
 /* Streamlit's own vertical-block gap beats a plain class selector on specificity;
    !important on every section override below is what actually wins. */
 div[data-testid="stVerticalBlock"]{gap:0;}
+/* Streamlit sizes a markdown element's box on the assumption that its last child carries the
+   default 1rem bottom margin, and cancels that margin again when it lays the block out. Our
+   components set margin:0, so every one of them measured 16px shorter than its text and the
+   next control landed on top of it — the "Delete permanently" button over its own warning.
+   Giving the last child the margin back costs no visible space and fixes all of them (D48). */
+[data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:1rem !important;}
 button p{margin:0;}
 
 /* header bar */
@@ -118,11 +129,26 @@ button p{margin:0;}
 
 /* delete-a-person dialog */
 .st-key-header_actions [data-testid="stHorizontalBlock"]{padding:0 !important;gap:8px !important;}
-.sc-dialog-note{font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:20px;
-  color:var(--text-muted);margin:0 0 4px;}
-.sc-dialog-note strong{color:var(--text);}
+[data-testid="stDialog"] [data-testid="stVerticalBlock"]{gap:14px !important;}
+[data-testid="stDialog"] section{background:var(--surface) !important;border-radius:16px;}
+[data-testid="stDialog"] h2{font-family:'Space Grotesk',sans-serif !important;font-size:20px;
+  font-weight:600;color:var(--text);}
+[data-testid="stDialog"] [data-testid="stTextInputRootElement"]{border-radius:10px;
+  background:var(--bg) !important;border:1px solid var(--border-strong) !important;}
+[data-testid="stDialog"] input{font-family:'IBM Plex Sans',sans-serif;font-size:15px;
+  color:var(--text) !important;}
+.st-key-confirm_deletion button{background:var(--danger) !important;border:none !important;
+  border-radius:10px;height:40px;padding:0 18px;}
+.st-key-confirm_deletion button:hover{background:var(--danger-hover) !important;}
+.st-key-confirm_deletion button p{color:#fff !important;font-weight:600;}
+.st-key-close_deletion button{border:1px solid var(--border-strong) !important;
+  background:var(--surface) !important;border-radius:10px;height:40px;padding:0 18px;}
+.sc-dialog-note{font-family:'IBM Plex Sans',sans-serif;font-size:14px;line-height:22px;
+  color:var(--text-muted);margin:0;}
+.sc-dialog-warn{font-family:'IBM Plex Sans',sans-serif;font-size:14px;line-height:22px;
+  color:var(--danger);font-weight:600;margin:0;}
 .sc-receipt{display:flex;flex-direction:column;gap:8px;}
-.sc-receipt p{margin:0;font-family:'IBM Plex Sans',sans-serif;font-size:14px;line-height:22px;
+.sc-receipt p{margin:0;font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:24px;
   color:var(--text);}
 .sc-receipt .muted{color:var(--text-muted);font-size:13px;line-height:20px;}
 
@@ -304,12 +330,20 @@ def deletion_dialog() -> None:
     the receipt lives in session state between the click and the confirmation."""
     receipt = st.session_state.deletion_receipt
     if receipt is None:
-        name = st.text_input("Name", placeholder="e.g. Kwame Boateng", key="deletion_name").strip()
         st.markdown(
             '<p class="sc-dialog-note">Every spelling of that person is replaced by their '
             "role, in the claims as well as the speaker fields. Everyone else stays named, "
-            "and the decisions around them keep answering. "
-            "<strong>This rewrites the record and cannot be undone.</strong></p>",
+            "and the decisions around them keep answering.</p>",
+            unsafe_allow_html=True,
+        )
+        name = st.text_input(
+            "Name",
+            placeholder="Who should be deleted? e.g. Kwame Boateng",
+            key="deletion_name",
+            label_visibility="collapsed",
+        ).strip()
+        st.markdown(
+            '<p class="sc-dialog-warn">This rewrites the record and cannot be undone.</p>',
             unsafe_allow_html=True,
         )
         if st.button("Delete permanently", key="confirm_deletion", type="primary"):
@@ -318,7 +352,11 @@ def deletion_dialog() -> None:
                     '<p class="sc-dialog-note">Type a name first.</p>', unsafe_allow_html=True
                 )
                 return
-            receipt = st.session_state.deletion_receipt = request_deletion(name)
+            st.session_state.deletion_receipt = request_deletion(name)
+            # The dialog is a fragment, so only it reruns — and this run has already drawn the
+            # form above. Without the rerun the confirmation appears under a live
+            # "Delete permanently" button.
+            st.rerun(scope="fragment")
     if receipt is None:
         return
     if receipt.get("error"):
@@ -400,8 +438,8 @@ with st.container(key="header"):
                     st.session_state.error = ""
                     st.rerun()
         with delete_col:
-            # Opened from here rather than kept in session state: Streamlit closes the dialog
-            # when the script reruns without this call, which is what the ✕ needs to work.
+            # Opened from here rather than from a session flag: Streamlit closes the dialog when
+            # the script reruns without this call, which is what the ✕ needs to work.
             if st.button("Delete a person", key="open_deletion"):
                 st.session_state.deletion_receipt = None
                 deletion_dialog()

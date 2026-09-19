@@ -20,6 +20,17 @@ two people sharing a first name, and that sentence is the difference between a k
 a redaction that missed ([D47](../docs/decisions.md)). Nothing about it is stored: the receipt
 lives in session state until the dialog closes. See [docs/deletion.md](../docs/deletion.md).
 
+## Theme
+
+Light only, pinned in [.streamlit/config.toml](.streamlit/config.toml) with the same tokens
+`app.py` declares on `:root` ([D48](../docs/decisions.md)). Without it Streamlit's own widgets
+follow the browser's dark-mode preference while our CSS stays light, and half the page goes dark.
+
+One Streamlit quirk to know before adding a component: it sizes a markdown element's box
+expecting the default `1rem` bottom margin on its last child, so a block whose last child sets
+`margin:0` measures 16px short and whatever follows lands on top of it. `STYLE` gives that margin
+back for every block; keep the rule when editing the stylesheet.
+
 ## Configuration
 
 - `BACKEND_URL` — where the backend lives. Defaults to `http://localhost:8000`.

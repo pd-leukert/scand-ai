@@ -1662,3 +1662,59 @@ that and it is still unanswered; the only reset is a re-extraction, which is slo
 into Q5. A typo that happens to resolve to a real person deletes that person. And the
 confirmation is a page element, not a record: once the dialog closes, "show me that again"
 is not something the system can do, which is deliberate.
+
+---
+
+## D48 — 2026-09-20 — Accepted
+
+**The frontend is light-only, pinned in `frontend/.streamlit/config.toml`, and every custom
+HTML block keeps a 1rem bottom margin on its last child so Streamlit sizes it correctly.**
+
+Two bugs a judge would have seen, both reported by David, both in how Streamlit and our own
+CSS meet.
+
+*The page was half dark.* `app.py`'s design tokens are light values taken from
+`design.html`, but they only cover what we paint. Everything Streamlit paints — the text
+inputs, the buttons, the dialog — follows the browser's `prefers-color-scheme`, so on a
+laptop in dark mode the deletion dialog came up dark-on-dark inside a light page, with an
+unreadable title. `[theme] base = "light"` plus our own `primaryColor`, `backgroundColor`,
+`secondaryBackgroundColor` and `textColor` pins Streamlit's widgets to the same palette, and
+`color-scheme: light` on `:root` pins what the browser paints for us (form controls,
+scrollbars, autofill). Checked with a browser forced to dark: identical to light.
+
+Rejected: *supporting dark mode by adding dark values for our tokens.* A second palette to
+keep in step with a mockup that only exists in light, for a demo where the judges see one
+instance for ten minutes.
+
+*Controls sat on top of their own text.* The "Delete permanently" button overlapped the
+warning above it by exactly 16px. Streamlit sizes a markdown element's box on the
+assumption that its last child carries the default 1rem bottom margin, and cancels that
+margin again when it lays the elements out; every one of our components sets `margin:0`, so
+each block measured 16px shorter than its text and the next widget was positioned into it.
+Found by bisecting a minimal app one CSS property at a time: `color`, `font-size`,
+`line-height` and `font-weight` all size correctly, `margin:0` alone loses 16px.
+`[data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:1rem !important;}` gives
+the margin back, costs no visible space because the layout cancels it, and fixes every block
+at once rather than the one that was reported — the answer card and the source rows were
+clipped by the same 16px.
+
+Rejected:
+- *Forcing `height:auto` on the element containers.* Tried first, and it does nothing: the
+  height is not a CSS declaration we can outrank.
+- *Replacing the custom HTML with native Streamlit components.* The design in `design.html`
+  lives in that HTML, and a styled native paragraph measures short in exactly the same way
+  as soon as its margin is zeroed — it is the margin, not the HTML.
+- *Moving the deletion out of the dialog and onto a page of its own.* Built and working
+  before the real cause was found; it is a bigger UI change than the bug needed, and the
+  same 16px bug followed it onto the page, which is how the cause was finally isolated.
+
+Also here, smaller: the confirm button uses the palette's own danger tone rather than
+Streamlit's default red; the name field's label is collapsed, since its placeholder asks the
+question; and after a deletion the dialog reruns its fragment so the confirmation replaces
+the form instead of appearing under a still-live "Delete permanently" button.
+
+*Cost:* a judge whose system is in dark mode gets a light page regardless — deliberate, but
+it is a preference we are overriding. The margin rule is a workaround for Streamlit
+internals: it is pinned to a `data-testid` and a 1rem assumption, so a Streamlit upgrade can
+silently undo it, and the symptom would again be overlapping text rather than an error. The
+theme file is a fourth place configuration lives (compose, Dockerfile, README, now this).

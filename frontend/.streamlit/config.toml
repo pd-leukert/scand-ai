@@ -1,0 +1,11 @@
+# Light theme, always. Without this Streamlit picks its own theme from the browser's
+# prefers-color-scheme, so a judge whose laptop is in dark mode gets dark Streamlit widgets
+# — inputs, buttons, the dialog — inside a page whose own CSS (app.py) is light throughout.
+# The colours below are the same design tokens app.py declares on :root, so the widgets
+# Streamlit paints and the components we paint agree. See D48.
+[theme]
+base = "light"
+primaryColor = "#1668a5"
+backgroundColor = "#fafafa"
+secondaryBackgroundColor = "#f1f3f5"
+textColor = "#131c26"
