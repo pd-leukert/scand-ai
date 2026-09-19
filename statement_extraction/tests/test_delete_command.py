@@ -3,14 +3,14 @@ from pathlib import Path
 
 import pytest
 from src.app import delete
-from tests.test_deletion import archive, text_of
+from tests.test_deletion import archive, stmts, text_of
 
 
 @pytest.fixture
 def statements_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "statements.json"
     path.write_text(
-        json.dumps({"statements": archive()}, ensure_ascii=False, indent=2) + "\n",
+        json.dumps({"documents": archive()}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("STATEMENTS_FILE_PATH", str(path))
@@ -18,7 +18,7 @@ def statements_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def written(path: Path) -> list[dict]:
-    return json.loads(path.read_text(encoding="utf-8"))["statements"]
+    return json.loads(path.read_text(encoding="utf-8"))["documents"]
 
 
 def test_the_file_is_rewritten_without_the_person_and_the_receipt_is_printed(
@@ -28,7 +28,8 @@ def test_the_file_is_rewritten_without_the_person_and_the_receipt_is_printed(
 
     after = written(statements_file)
     assert "Kwame" not in text_of(after) and "Boateng" not in text_of(after)
-    assert [s["id"] for s in after] == [s["id"] for s in archive()]
+    assert [d["id"] for d in after] == [d["id"] for d in archive()]
+    assert len(stmts(after)) == len(stmts(archive()))
     receipt = json.loads(capsys.readouterr().out)
     assert receipt["deleted"]["name"] == "Kwame Boateng"
     assert not list(statements_file.parent.glob("*.tmp"))

@@ -67,4 +67,4 @@ that person with a role placeholder everywhere they appear, and prints a receipt
 the receipt and changes nothing. There is no backup: it would be a second copy of the name. Run it
 in compose with `docker compose run --rm --no-deps statement-extraction uv run --frozen python -m
 src.app.delete "<name>"`. The backend reads the file on every request, so it answers from the
-rewrite straight away. How it works and where it stands: [docs/deletion.md](../docs/deletion.md), [D37 and D38](../docs/decisions.md).
+rewrite straight away. How it works and where it stands: [docs/deletion.md](../docs/deletion.md), [D42 to D45](../docs/decisions.md).

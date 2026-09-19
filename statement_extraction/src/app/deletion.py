@@ -3,6 +3,10 @@
 A person is not a string (D19). The request is resolved to one person first, then every spelling
 of that person is replaced by a role-class placeholder in every text field, quotes included (D3).
 Nothing here reads a source document or calls a model, and nothing keeps the deleted name.
+
+The unit of work is a document block as the file stores it (D36): the document's own `people`
+and `summary` are swept exactly like the statements nested under it, because a name survives
+in a header just as well as in a claim (D45).
 """
 
 from __future__ import annotations
@@ -19,18 +23,28 @@ PLACEHOLDERS = {
     "unknown": "[former participant]",
 }
 
-# Fields that hold ids, dates and labels, never a person's words.
+# Fields that hold ids, dates and enum labels, never a person's words. Everything else is
+# swept, so a field added to the file later is covered by default.
 _SKIP_KEYS = {
     "id",
     "document_id",
+    "type",
     "doc_type",
-    "statement",
+    "date",
     "speech_act",
     "handling",
     "position",
     "statement_date",
     "document_date",
 }
+
+# What a transcript calls a speaker it does not name — "Me", "Them", "Unknown Speaker",
+# "Guest 1", a dial-in number (documents.Unit.label). The file no longer carries the label
+# in a field of its own: output._actor folds it into actor.name (D37), so the only way left
+# to tell one from a real name is to recognise the shape. Never a person.
+_LABEL_WORDS = {"me", "them", "unknown speaker", "unknown", "guest", "caller", "participant"}
+_NUMBERED_LABEL = re.compile(r"^(?:guest|caller|participant|speaker|unknown speaker)\s*\d+$")
+_DIAL_IN = re.compile(r"^[\d\s+()-]+$")
 _LETTERS = r"[^\W\d_]+"
 _PAIR = re.compile(rf"\b({_LETTERS})\s+(?=({_LETTERS})\b)")
 _PHONE = re.compile(r"\+?\d[\d ]{8,}\d")
@@ -52,28 +66,33 @@ class Person:
         return self.spellings.most_common(1)[0][0] if self.spellings else self.key.title()
 
 
-def delete_person(statements: list[dict], request: str) -> tuple[list[dict], dict]:
-    """The statements with one person redacted, and a receipt saying who was and was not.
+def delete_person(documents: list[dict], request: str) -> tuple[list[dict], dict]:
+    """The documents with one person redacted, and a receipt saying who was and was not.
 
-    The input is not changed. A request that matches nobody returns the statements as they were.
+    Takes the file's `documents` array as it is stored (D36) and returns one of the same shape.
+    The input is not changed. A request that matches nobody returns the documents as they were.
     """
-    people = _find_people(statements)
+    people = _find_people(documents)
     tokens = _fold(unicodedata.normalize("NFC", request)).split()
-    chosen, others = _resolve(people, tokens, statements)
+    chosen, others = _resolve(people, tokens, documents)
     receipt: dict = {"requested": request, "deleted": None, "considered": [], "left_in_place": []}
     if chosen is None:
         receipt["considered"] = [_entry(p, "left") for p in others]
-        return statements, receipt
+        return documents, receipt
 
     rest = [p for p in people.values() if p.key != chosen.key]
-    placeholder = PLACEHOLDERS[_role_class(chosen, statements)]
+    placeholder = PLACEHOLDERS[_role_class(chosen, documents)]
     rules = _rules(chosen, rest, receipt)
-    result, changed, replaced = [], 0, 0
-    for statement in statements:
-        new, count = _redact(statement, rules, placeholder)
+    result, replaced = [], 0
+    for document in documents:
+        new, count = _redact(document, rules, placeholder)
         result.append(new)
-        changed += count > 0
         replaced += count
+    # Counted over statements, not documents: it is the number a reader checks against the
+    # file, and a document header changing is not a statement changing.
+    changed = sum(
+        _redact(statement, rules, placeholder)[1] > 0 for statement in _statements(documents)
+    )
     receipt["deleted"] = {
         "name": chosen.name,
         "spellings": sorted(chosen.spellings),
@@ -82,12 +101,36 @@ def delete_person(statements: list[dict], request: str) -> tuple[list[dict], dic
         "replacements": replaced,
     }
     receipt["considered"] = [_entry(chosen, "removed")] + [_entry(p, "left") for p in others]
-    phones = sum(any(_PHONE.search(s) for s in _strings(st)) for st in result)
+    phones = sum(any(_PHONE.search(s) for s in _strings(st)) for st in _statements(result))
     if phones:
         receipt["left_in_place"].append(
             f"phone numbers, in {phones} statements: nothing ties a number to a person"
         )
     return result, receipt
+
+
+def _statements(documents: list[dict]):
+    """Every statement in the file, in order, regardless of which document holds it."""
+    for document in documents:
+        yield from document.get("statements", [])
+
+
+def _actors(documents: list[dict]):
+    """Every actor the file names. agreed_by is gone (D37) but is still read if present, so
+    a file written before that change resolves the same people it always did."""
+    for statement in _statements(documents):
+        for who in [statement.get("actor"), *statement.get("agreed_by", [])]:
+            if who:
+                yield who
+
+
+def _is_label(name: str) -> bool:
+    folded = _fold(" ".join(name.split()))
+    return (
+        folded in _LABEL_WORDS
+        or bool(_NUMBERED_LABEL.match(folded))
+        or bool(_DIAL_IN.match(folded.strip()))
+    )
 
 
 def _fold(text: str) -> str:
@@ -114,21 +157,29 @@ def _strings(value, key: str | None = None):
             yield from _strings(v, key)
 
 
-def _find_people(statements: list[dict]) -> dict[str, Person]:
+def _find_people(documents: list[dict]) -> dict[str, Person]:
     people: dict[str, Person] = {}
 
     def add(spelling: str) -> None:
         key = _fold(" ".join(spelling.split()))
         people.setdefault(key, Person(key)).spellings[" ".join(spelling.split())] += 1
 
-    for statement in statements:
-        for who in [statement.get("actor"), *statement.get("agreed_by", [])]:
-            if who and who.get("name") and not who.get("label") and len(who["name"].split()) > 1:
-                add(who["name"])
+    def named(name: str | None) -> bool:
+        return bool(name) and not _is_label(name) and len(name.split()) > 1
+
+    for who in _actors(documents):
+        if named(who.get("name")):
+            add(who["name"])
+    # The document header lists who was in the room, which is where a person who never speaks
+    # is named (D45) — the same people the actors already give, plus the silent ones.
+    for document in documents:
+        for name in document.get("people", []):
+            if isinstance(name, str) and named(name):
+                add(name)
     first_names = {p.tokens[0] for p in people.values()}
     # People who are only mentioned, such as a second Nadia, show up as "First Last" in the text.
-    for statement in statements:
-        for text in _strings(statement):
+    for document in documents:
+        for text in _strings(document):
             for m in _PAIR.finditer(unicodedata.normalize("NFC", text)):
                 if m[1][0].isupper() and m[2][0].isupper() and _fold(m[1]) in first_names:
                     add(f"{m[1]} {m[2]}")
@@ -136,14 +187,14 @@ def _find_people(statements: list[dict]) -> dict[str, Person]:
         pattern = re.compile(r"\b" + r"\s+".join(map(re.escape, person.tokens)) + r"\b")
         person.evidence = sum(
             bool(pattern.search(_fold(unicodedata.normalize("NFC", " ".join(_strings(st))))))
-            for st in statements
+            for st in _statements(documents)
         )
     return people
 
 
-def _resolve(people: dict[str, Person], tokens: list[str], statements: list[dict]):
+def _resolve(people: dict[str, Person], tokens: list[str], documents: list[dict]):
     """The person the request means, and the others it could have meant (D19)."""
-    if not tokens or " ".join(tokens) in _labels(statements):
+    if not tokens or _is_label(" ".join(tokens)):
         return None, []
     if len(tokens) > 1:
         chosen = people.get(" ".join(tokens))
@@ -151,7 +202,7 @@ def _resolve(people: dict[str, Person], tokens: list[str], statements: list[dict
             mentioned = re.compile(r"\b" + r"\s+".join(map(re.escape, tokens)) + r"\b")
             hits = sum(
                 bool(mentioned.search(_fold(unicodedata.normalize("NFC", " ".join(_strings(st))))))
-                for st in statements
+                for st in _statements(documents)
             )
             if hits:
                 chosen = Person(" ".join(tokens), Counter({" ".join(tokens).title(): hits}), hits)
@@ -169,32 +220,20 @@ def _resolve(people: dict[str, Person], tokens: list[str], statements: list[dict
     return (matches[0], matches[1:]) if matches else (None, [])
 
 
-def _labels(statements: list[dict]) -> set[str]:
-    """What the file calls speakers it does not name: "Guest 1", "Them". Never a person."""
-    found = [
-        who.get("label")
-        for statement in statements
-        for who in [statement.get("actor"), *statement.get("agreed_by", [])]
-        if who
-    ]
-    return {_fold(" ".join(label.split())) for label in found if label}
-
-
 def _entry(person: Person, outcome: str) -> dict:
     return {"name": person.name, "statements": person.evidence, "outcome": outcome}
 
 
-def _role_class(person: Person, statements: list[dict]) -> str:
+def _role_class(person: Person, documents: list[dict]) -> str:
     orgs: Counter = Counter()
-    for statement in statements:
-        for who in [statement.get("actor"), *statement.get("agreed_by", [])]:
-            org = (who or {}).get("organization")
-            if (
-                org
-                and org != "Not stated"
-                and _fold(" ".join((who.get("name") or "").split())) == person.key
-            ):
-                orgs[org] += 1
+    for who in _actors(documents):
+        org = who.get("organization")
+        if (
+            org
+            and org != "Not stated"
+            and _fold(" ".join((who.get("name") or "").split())) == person.key
+        ):
+            orgs[org] += 1
     if not orgs:
         return "unknown"
     org = orgs.most_common(1)[0][0].lower()

@@ -59,8 +59,8 @@ deployed version, and it gates the receipt in the UI ([deletion.md](deletion.md)
 The brief says judges open the URL and use it themselves on Sunday, and that they pick the person
 ([challenge.md](challenge.md#how-it-is-tested)). A command we run in a terminal is therefore not
 enough: the page has to be able to call it, and a judge who has never seen the page has to be able
-to use it (CLAUDE.md, definition of done). The deletion itself is built ([D37](decisions.md),
-[D38](decisions.md)); what is missing is a way for the page to reach it.
+to use it (CLAUDE.md, definition of done). The deletion itself is built ([D42](decisions.md),
+[D43](decisions.md)); what is missing is a way for the page to reach it.
 
 What any answer has to respect: the frontend holds no logic and has no volume; the backend mounts
 the file read-only and D12 gives the file one writer; the deletion code lives in

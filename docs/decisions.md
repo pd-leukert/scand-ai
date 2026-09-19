@@ -1430,7 +1430,7 @@ how the demo triggers a deletion is still to be decided.
 ---
 
 ## D43 — 2026-09-19 — Accepted
-**Deletion is a command in `statement_extraction` that rewrites the statements file in place and prints the receipt. Extends D37.**
+**Deletion is a command in `statement_extraction` that rewrites the statements file in place and prints the receipt. Extends D42.**
 
 `uv run python -m src.app.delete "Kwame Boateng" [--dry-run]`, next to `extract.py`. It reads and
 writes `STATEMENTS_FILE_PATH`, the file extraction writes, and reuses extraction's whole-or-nothing
@@ -1438,7 +1438,7 @@ writer, so a crash cannot leave a half-written record. In compose the extraction
 only one with the volume mounted read-write, so the file still has exactly one writer:
 `docker compose run --rm --no-deps statement-extraction uv run --frozen python -m src.app.delete "<name>"`.
 The receipt is printed to the terminal as JSON and stored nowhere, since it names the person
-(D37). Exit 0 means the file was rewritten (or a dry run printed a receipt), 1 means nobody
+(D42). Exit 0 means the file was rewritten (or a dry run printed a receipt), 1 means nobody
 matched and the file was left untouched, 2 means there is no file. If a `documents/` folder from
 an interrupted extraction run sits next to the file, the command says it still holds the name.
 
@@ -1451,7 +1451,7 @@ Rejected:
 - *Making the backend do it.* It mounts the file read-only and holds only the answering path.
   Where the demo's trigger lives is still an open team decision (`docs/deletion.md`); this command
   is what any trigger would call, so it does not pre-empt that choice.
-- *Refusing a bare first name that could mean two people.* D37 already resolves it, to the person
+- *Refusing a bare first name that could mean two people.* D42 already resolves it, to the person
   with the most statements, and the receipt says who else it could have been. A refusal would make
   "delete Nadia" unrunnable.
 - *Removing the leftover `documents/` folder from here.* It is extraction's scratch space, not
@@ -1467,16 +1467,16 @@ error in a script.
 ---
 
 ## D44 — 2026-09-19 — Accepted
-**The backend reads the statements file on every request and caches nothing. Closes the reload question D38 left open.**
+**The backend reads the statements file on every request and caches nothing. Closes the reload question D43 left open.**
 
 `load_statements` in `backend/src/app/statements.py` used `lru_cache`, so a running backend kept
-the file it first read. A deletion (D37, D38) rewrites the file on disk, and the backend went on
+the file it first read. A deletion (D42, D43) rewrites the file on disk, and the backend went on
 answering with the old names until it restarted. It now reads and validates the file on each
 request. That costs 28 ms for 1,116 statements (1 MB), against seconds for the model call, and every
 request already re-serialises the whole file into the prompt (D2). The read is also explicitly
 UTF-8: the default on Windows is cp1252, which cannot decode "Öberg" or "Sørensen", so a local
 backend could not load a real file. The container was not affected. Checked against the running
-app: ask, delete Marco Rossi with the D38 command, ask again, with no restart. The name is gone,
+app: ask, delete Marco Rossi with the D43 command, ask again, with no restart. The name is gone,
 the placeholder is there, and all five citations still resolve.
 
 Rejected:
@@ -1495,5 +1495,63 @@ statements it is still small next to the model call, and D2 already sets the cei
 design stops working. A request already running when the file is rewritten finishes with the old
 names, and the next one has the new. A file that is not valid now fails the request instead of
 serving an older copy, which is intended, and cannot happen from a half-written file because both
-extraction and deletion replace the file whole. This replaces the last cost line of D38, that the
+extraction and deletion replace the file whole. This replaces the last cost line of D43, that the
 backend keeps the old names until it restarts.
+
+---
+
+## D45 — 2026-09-19 — Accepted, supersedes part of D42
+
+**Deletion is rebased onto the regrouped, claim-only statements file (D36/D37): it takes the
+`documents` array instead of a flat statement list, sweeps each document's own `people` and
+`summary`, and recognises an unnamed speaker by the shape of the name now that the `label`
+field is gone.**
+
+This branch was written against the pre-D36 file — a flat `statements` array whose entries
+carried `location`, `verbatim_span`, `agreed_by` and `actor.role`. While it sat unmerged,
+`main` regrouped the file under its documents (D36) and cut a statement down to
+`claim`/`actor`/`speech_act`/`statement_date` (D37). Rebasing onto that is not a textual
+merge: only `backend/src/app/statements.py` and this log actually conflicted, and the
+deletion code would have rebased *clean and silently wrong* — `delete.py` reads
+`["statements"]`, which no longer exists, and `delete_person` would have walked a list of
+document blocks looking for `actor` fields that live one level down.
+
+Three things the new shape changes, and what was decided about each:
+
+- **The unit of work is a document block, not a statement.** `delete_person(documents, ...)`
+  takes and returns the `documents` array as stored. Rejected: *keeping the flat signature
+  and having the command flatten and re-group around it.* Re-grouping means reconstructing
+  which statement belonged to which document from a derived id, which is exactly the kind of
+  cleverness that costs an hour at 2am — and the document block is what the file actually is.
+- **`people` and `summary` are swept like any other text.** They are new, they hold names
+  (`people` is a list of them), and they live on the document, not the statement. Leaving
+  them would have left a deleted person's name in the file in 45 places — working agreement
+  rule 3, and rule 4's "each derived artifact is a new place a deleted person survives"
+  applied to new *fields* rather than a new file. `statements_changed` in the receipt still
+  counts statements only, because that is the number a reader checks against the file; a
+  header changing is not a statement changing.
+- **An unnamed speaker is recognised by shape.** `output._actor` (D37) folds a transcript's
+  `label` into `actor.name`, so "Guest 1", "Them" and "Unknown Speaker" now arrive looking
+  like ordinary names — and "Guest 1" has two words, which is all `_find_people` used to
+  require. Without this, deleting "Guest 1" would have looked like a real deletion and the
+  receipt would have offered non-people as candidates. Rejected: *asking extraction to keep
+  the `label` field.* That reverses a decision made on the project owner's explicit
+  instruction (D37) to fix a problem that belongs to the consumer of the file, and the
+  labels are a closed, known set — `documents.Unit` documents them.
+
+`agreed_by` is still read if a statement carries it, so a file written before D37 resolves
+the same people it always did; nothing writes it any more.
+
+**Verified, not assumed:** the real extraction was run over the real 45-document corpus with a
+scripted model, producing 1,596 statements in the new shape, and Kwame Boateng, Nadia and
+Henrik Sorensen were deleted from it — no part of a deleted name survives anywhere including
+the headers, the envelope keeps its shape, and the result still loads in the backend's own
+`StatementsFile` model. Numbers and the two things that run does *not* prove are in
+[deletion.md](deletion.md).
+
+*Cost:* D42's description of what is swept is now wrong in its details — it names
+`verbatim_span` and `doc_type`, which no longer exist. It is left as written, per this log's
+append-only rule; this entry is the correction. The deeper cost is D37's, not this entry's:
+the verbatim span was the one field deletion could point a judge at to prove a redaction
+happened in real quoted text, and the claim is a paraphrase. Deletion still reaches every
+place a name sits, but "show me the redacted quote" is no longer a thing the file can answer.

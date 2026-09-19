@@ -32,8 +32,8 @@ def main(argv: list[str]) -> int:
         print(f"No statements file at {path}.", file=sys.stderr)
         return 2
 
-    statements = json.loads(path.read_text(encoding="utf-8"))["statements"]
-    redacted, receipt = delete_person(statements, args.name)
+    documents = json.loads(path.read_text(encoding="utf-8"))["documents"]
+    redacted, receipt = delete_person(documents, args.name)
     print(json.dumps(receipt, indent=2, ensure_ascii=False))
 
     if receipt["deleted"] is None:

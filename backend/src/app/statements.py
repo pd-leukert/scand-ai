@@ -79,9 +79,7 @@ def load_statements(path: str) -> dict[str, Statement]:
     survives, and deletion rewrites the file (D44). A rewrite is whole-or-nothing, so a request
     sees the file from before it or after it, never half of each.
     """
-    parsed = StatementsFile.model_validate(
-        json.loads(Path(path).read_text(encoding="utf-8"))
-    )
+    parsed = StatementsFile.model_validate(json.loads(Path(path).read_text(encoding="utf-8")))
     return {
         statement.id: statement
         for document in parsed.documents
