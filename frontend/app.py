@@ -136,11 +136,15 @@ button [data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:0 !impor
 .sc-hero-title{margin:0 !important;padding:0 !important;text-align:center !important;
   font-family:'Space Grotesk',sans-serif !important;font-size:32px !important;
   line-height:40px !important;font-weight:600 !important;color:var(--text) !important;}
-/* Same Streamlit collision as .sc-hero-title above, on this paragraph instead of a
-   heading: a higher-specificity generated rule resets margin-left/right to 0, which was
-   silently killing the auto-centering and pinning this flush to the left edge. */
-.sc-hero-sub{margin:12px auto 0 !important;text-align:center !important;max-width:520px;
-  font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:22px;color:var(--text-muted);}
+/* What the record holds, under the title. Deliberately quiet: faint colour, 13px, and
+   icons at text size, so it reads as a caption rather than a second headline. */
+.sc-corpus{display:flex !important;align-items:center;justify-content:center;
+  flex-wrap:wrap;gap:4px 10px;margin:14px 0 0 !important;
+  font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:20px;
+  color:var(--text-faint);}
+.sc-corpus-item{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+.sc-corpus-item svg{width:14px;height:14px;flex-shrink:0;}
+.sc-corpus-sep{color:var(--border-strong);}
 
 .st-key-ask_form{width:100%;background:var(--surface);border:1px solid var(--border-strong);
   border-radius:24px;box-shadow:0 1px 2px rgba(9,20,31,0.08);padding:6px 6px 6px 20px;}
@@ -288,6 +292,38 @@ button [data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:0 !impor
   font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:20px;color:var(--text);}
 </style>
 """.replace("__FONTS_HREF__", FONTS_HREF)
+
+_ICON = (
+    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"'
+    ' stroke-linecap="round" stroke-linejoin="round">{}</svg>'
+)
+# The counts are the archive's, and the archive is fixed for the weekend because it is baked
+# into the extraction image (D18). statement_extraction/tests/test_documents.py asserts these
+# same three numbers against input/, so a corpus that changes fails a test rather than
+# quietly leaving a false claim on the first screen a judge reads.
+CORPUS_ITEMS = (
+    (
+        '<path d="M13.5 7.7c0 2.5-2.5 4.6-5.5 4.6-.8 0-1.6-.1-2.3-.4L2.5 13l1.1-2.4'
+        'c-.7-.8-1.1-1.8-1.1-2.9 0-2.5 2.5-4.6 5.5-4.6s5.5 2.1 5.5 4.6Z"/>',
+        "23 transcripts",
+    ),
+    (
+        '<rect x="2" y="3.5" width="12" height="9" rx="1.5"/>'
+        '<path d="m2.6 4.8 5.4 3.9 5.4-3.9"/>',
+        "20 emails",
+    ),
+    (
+        '<path d="M9 2H4.8c-.7 0-1.3.6-1.3 1.3v9.4c0 .7.6 1.3 1.3 1.3h6.4c.7 0 1.3-.6'
+        ' 1.3-1.3V5.5L9 2Z"/><path d="M9 2v3.5h3.5"/><path d="M6 9h4M6 11.2h2.8"/>',
+        "2 reports",
+    ),
+)
+CORPUS_HTML = '<div class="sc-corpus">{}</div>'.format(
+    '<span class="sc-corpus-sep">⋅</span>'.join(
+        f'<span class="sc-corpus-item">{_ICON.format(paths)}{label}</span>'
+        for paths, label in CORPUS_ITEMS
+    )
+)
 
 LOADING_HTML = (
     '<div class="sc-loading" role="status" aria-live="polite">'
@@ -582,8 +618,7 @@ if not st.session_state.question:
         with st.container(key="hero"):
             st.markdown(
                 '<h1 class="sc-hero-title">Ask about your communication history</h1>'
-                '<p class="sc-hero-sub">scandAI answers from your meeting notes, status reports '
-                "and email threads. Every claim traces back to its source.</p>",
+                + CORPUS_HTML,
                 unsafe_allow_html=True,
             )
             with st.container(key="ask_form"):

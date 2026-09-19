@@ -1976,3 +1976,40 @@ single place to turn it down, or to zero. The fade's timing is tuned against `DU
 pacing (D15); a real model streams slower, where each fragment simply completes its fade,
 which is the better-looking case. And the two `@keyframes` blocks are deliberate
 duplicates — one effect, two names — which looks like something to DRY up and must not be.
+
+---
+
+## D53 — 2026-09-20 — Accepted
+**The hero's subtitle is replaced by what the record holds — 23 transcripts, 20 emails,
+2 reports — and those counts are hardcoded in the frontend rather than fetched.**
+
+Asked for, and the shape is right: the old subtitle described the product ("scandAI answers
+from your meeting notes…"), which a judge can infer from the title and the placeholder. The
+counts say something they cannot infer and would otherwise have to take on trust — how much
+record is behind the answer.
+
+Hardcoded, which deserves the argument because this is a factual claim on the first screen
+a judge reads, in a project whose whole thesis is that claims are checkable:
+
+- The archive is fixed for the weekend — baked into the extraction image at build time
+  (D18), not mounted — so the numbers cannot drift under a running deployment.
+- `statement_extraction/tests/test_documents.py` already asserts
+  `{"transcript": 23, "email": 20, "report": 2}` against `input/`. A corpus that changes
+  fails a test rather than quietly leaving a false line on screen. That test is the guard;
+  the frontend comment points at it.
+
+Rejected: *deriving them from the statements file over a new backend endpoint.* More
+correct in principle, and it would describe the artifact actually answered from rather than
+the archive — if extraction dropped a document the two would disagree. Rejected for now
+because it is a network call on first paint for a caption, with a fallback to design for
+when the backend is not up, and because CLAUDE.md asks the frontend to hold no logic. If
+the two ever can disagree — a corpus that is not baked in, or partial extraction — this
+becomes the wrong call and the endpoint is the fix.
+
+Icons are inline SVG at text size, `currentColor`, stroke-only. Checked first that
+Streamlit's sanitizer keeps SVG in `st.markdown` (it does, paths intact) rather than
+assuming it.
+
+*Cost:* three numbers now live in two places, `input/` and `frontend/app.py`, joined only by
+a test in a third. Nothing fails loudly in the frontend if they part company — the test goes
+red, and whoever sees it has to know to come here.
