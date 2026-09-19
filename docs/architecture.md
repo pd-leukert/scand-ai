@@ -93,19 +93,22 @@ anywhere.
 
 The rule this service exists to enforce: **the model answers from the statements file, not
 from its own knowledge.** A claim that cannot point at a statement, and through it at a
-document and a location, does not go in the answer.
+document, does not go in the answer.
 
-Location, concretely: a citation resolves to a line range, plus — for transcripts — the
-utterance offset the Teams export already carries (`1 minute 4 seconds`), which is the
-"position in the conversation" the brief asks for, and — for email threads — the one
-message within the thread. See D14.
+As of D37, a citation resolves to a document, a paraphrased claim, and who said it — not to
+a line range or a verbatim quote. D14's location pointer (the Teams export's utterance
+offset, or the message-within-thread pointer for email threads) is still computed and
+validated during extraction, but is not carried into the statements file or shown to a
+judge; see [decisions.md](decisions.md) D37 for why, and at whose direction.
 
 ### 4. frontend — Streamlit
 
 The URL we submit. Its job is to make the receipt visible: an answer is not a paragraph,
-it is a paragraph whose claims can be expanded into the document, the location, and the
-quoted line they came from. The judges check citations by hand, so the shortest path from
-a claim to its source passage is a scoring decision, not a UI nicety.
+it is a paragraph whose claims can be expanded into the document and the claim text they
+came from. Before D37 this also reached the verbatim quoted line and its location; that is
+no longer part of the citation the backend returns (D37). The judges check citations by
+hand, so the shortest path from a claim to its source is still a scoring decision, not a UI
+nicety — it just no longer bottoms out in a verbatim line.
 
 ## Residency
 

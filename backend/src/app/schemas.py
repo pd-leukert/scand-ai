@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
-from .statements import Actor, Location, SpeechAct, Status
+from .statements import Actor, SpeechAct, Status
 
 
 class QueryRequest(BaseModel):
@@ -22,15 +22,16 @@ class Citation(BaseModel):
     invented citations regardless of what the model does with its input. The status and the
     ids that justify it are no exception: the answering model never asserts a statement's
     currency, it reads it (D40).
+
+    There is no location or verbatim_span: neither file carries them (D37), so this points a
+    judge at a document and a paraphrased claim, not at a real line range or a verbatim quote.
     """
 
     marker: int
     statement_id: str
     document_id: str
-    location: Location
-    verbatim_span: str
+    claim: str
     actor: Actor
-    agreed_by: list[Actor]
     speech_act: SpeechAct
     statement_date: datetime
     document_date: date

@@ -16,48 +16,47 @@ does not exist as far as the agent is concerned.
 
 ## What each statement carries, and which slice of the rubric it serves
 
-### Where it came from — *provenance, 25%*
+**As of D37, the persisted statement carries neither a location nor a verbatim span, and
+neither a role nor an agreed-by list.** The sections below describe the rubric this corpus
+was designed to score and are kept for that reason, but the *provenance* and part of the
+*attribution* slice they describe are no longer backed by what the file actually stores —
+see D37 for what was cut, at whose direction, and what it costs.
 
-- **The document** it came from, by stable identifier.
-- **Where in that document.** The corpus is 45 plain-text files, so the base pointer is a
-  line range. On top of that, each genre has a better pointer and we take it:
-  - **transcripts** — the utterance offset the Teams export already prints
-    (`Marco Rossi 1 minute 4 seconds`). This is literally the "position in the
-    conversation" the brief asks for.
-  - **email threads and status reports** — *which message in the thread*. A thread is one
-    file holding up to eighteen messages from five people across months, so the filename
-    alone points at almost nothing.
+### Where it came from — *provenance, 25%, not currently delivered*
 
-  The judges' phrase is "and where in it". The document alone is not a receipt.
-- **The verbatim span** it was extracted from — the actual words in the file. This is
-  what we show the judge when they check a citation, and it is our own check against the
-  model paraphrasing something into existence. Two rules that follow from the corpus:
-  **quote the garbled transcription as it stands** rather than cleaning it up (the judge
-  diffs the span against the file), and **never build a span out of an attachment
-  placeholder, a signature block or the synthetic-data banner** — those are holes in the
-  record, not claims. There are four placeholder forms, including a bare `Image` and a
-  Swedish one, so this is not a single-string match ([corpus.md](corpus.md)).
-  The same goes for a figure the speaker never finished: quote the fragment, record that
-  the number is incomplete, and do not let the model finish it.
+- **The document** it came from, by stable identifier. This part still holds.
+- ~~**Where in that document.**~~ Not stored. The corpus is 45 plain-text files, so the
+  natural base pointer was a line range, with a genre-specific pointer on top of it (the
+  Teams export's utterance offset for transcripts, "message N of M" for threads and
+  reports) — this is what the judges' phrase "and where in it" asks for, and it no longer
+  exists on a statement.
+- ~~**The verbatim span** it was extracted from~~ — Not stored. This was what a judge
+  could diff against the source file to check a citation, and extraction's own defence
+  against the model paraphrasing something into existence; it still guards extraction
+  internally (span-matching still runs, so a hallucinated claim is still dropped before it
+  reaches the file — see `statement_extraction/src/app/extraction.py`), but the verified
+  span itself is not written out, so nothing downstream can show it.
 
-### Who said it, and for whom — *attribution, 20%*
+### Who said it, and for whom — *attribution, 20%, partly delivered*
 
 - **The actor**: the person the document attributes it to — as a *person*, not as the
   string that happened to appear. One person in this corpus is spelled two ways
   (`Henrik Sørensen` / `Henrik Sorensen`) and two different people share a first name
   (`Nadia Haddad`, `Nadia Öberg`). Attribution and deletion both break on a model that
-  treats the spelling as the identity. See D19.
+  treats the spelling as the identity. See D19. This part still holds.
 - **Unknown is a value.** Three internal transcripts are one-to-one recordings whose
   speakers are exported as `Me:` and `Them:`; three more contain `Unknown Speaker`. The
   attendee header names who was in the room, which is not the same as who said the line.
   The actor there is unknown, and it must be *recordable* as unknown — guessing from the
-  attendee list is exactly the invented attribution the rubric punishes.
-- **Their organisation and role as of that document.** Not their current role. People
-  changed jobs over the year covered by the corpus, and "did the customer agree" is a
-  question about who they were in the room, not who they are now.
-- **Who agreed, if anyone.** For statements that record agreement, the parties. The
-  answer "nobody ever agreed to this" is a correct and valuable answer, and we can only
-  give it if the absence is represented.
+  attendee list is exactly the invented attribution the rubric punishes. This part still
+  holds.
+- **Their organisation** as of that document. Still stored. ~~**and role**~~ — not stored
+  (D37); extraction still asks the model for it and validates it against the document's
+  own words, but `output.py` no longer writes it out.
+- ~~**Who agreed, if anyone.**~~ Not stored (D37). "Nobody ever agreed to this" is no
+  longer a representable answer distinct from "an agreement statement doesn't mention
+  who" — the answering model has only the agreeing party's own statement (if it was itself
+  extracted as an `agreement`/`decision`) to go on.
 
 ### What kind of claim it is — *attribution, 20%*
 
@@ -77,6 +76,12 @@ message count. Two things worth carrying onto the statement beyond the document 
   room. Nothing else in the corpus is marked. If we build the audience-scoped answering
   feature this is the field it runs on; if we do not, it is still the difference between
   quoting an internal account review to a customer and not. See [roadmap.md](roadmap.md).
+
+The statements file itself carries these once per document, not once per statement — the
+document id, type, date, the people involved (its `Attendees:` header, or a thread's actual
+senders) and a summary (its `Meeting:` or `Subject:` line). Only what genuinely varies
+statement to statement repeats on each one — as of D37, that is just claim, actor, speech
+act and statement date. See [decisions.md](decisions.md) D36 and D37.
 
 ### When — *currency*
 
@@ -109,6 +114,17 @@ a statement; it wraps them.
   conflict, unanswered), each naming statement ids. These are the only model-written prose
   in the file, and each has to name real statements or is dropped.
 
+**The file is reduced the way the statements file is (D36, D37, D44).** What is true of a
+whole document — its id, type, date, people and summary — is written once, in a `documents`
+table. A statement carries only `id`, `claim`, `actor` (name, organization), `speech_act`,
+`statement_date` and its `status`: no `document_id`, `document_date`, location, verbatim span,
+`agreed_by`, `handling`, or actor label and role. The id stays, unlike in the statements file,
+because relations, problems and summaries point at it and the statements here are laid out by
+topic, so position cannot give it back. The backend restores `document_id` (the id up to its
+`#`) and `document_date` (from the table) on load. What the answering model is shown is
+smaller again: each statement under a short alias (`s1`, `s2`, …) mapped back to its real id on
+our side, so a long id is not repeated in every relation, problem and receipt that names it.
+
 Nothing here is a new quote: a relation, receipt or problem that does not name a statement
 the first pass produced is thrown away, and a status no surviving relation justifies is
 overruled. `current` is what an unlabelled statement is, and it means only that nothing we
@@ -123,11 +139,13 @@ grouped with it contradicts it.
 ## What deletion has to touch
 
 Recorded here because it constrains the model: a deleted person's name can appear in the
-actor fields, in the agreed-by parties, *and inside the verbatim span* — under **any of
-their spellings**, and next to a different person who shares their first name. The span is
-the part people forget; the spelling variant is the part that fails
-silently. A redaction that leaves the quoted line intact publishes the name in
-the citation — the one place we are guaranteed to show the judge.
+actor fields *and inside the claim* — under **any of their spellings**, and next to a
+different person who shares their first name. The claim is the part people forget; the
+spelling variant is the part that fails silently. A redaction that leaves the claim's text
+intact publishes the name in the citation — the one place we are guaranteed to show the
+judge. (Before D37 this warning was about the verbatim span; there is no verbatim span any
+more, but the claim is exactly as capable of quoting a name back at a judge, so the same
+rule applies to it.)
 
 Since D40 there are **two** derived files, and both have to be redacted. The reconciled
 file nests every statement, so it repeats every span and actor field the statements file

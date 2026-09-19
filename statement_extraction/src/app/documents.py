@@ -22,6 +22,7 @@ _INTERNAL_LINE = re.compile(r"(Me|Them): ?(.*)")
 _FROM = re.compile(r"(?:From|Von|Från): (.*)")
 _SENT = re.compile(r"(?:Sent|Gesendet|Skickat|Date): (.*)")
 _SUBJECT = re.compile(r"(?:Subject|Betreff|Ämne):.*")
+_SUBJECT_TEXT = re.compile(r"(?:Subject|Betreff|Ämne): ?(.*)")
 _THREAD_COUNT = re.compile(r"Messages in thread: (\d+)")
 _SENDER_NAME = re.compile(r"(.+?)\s*<")
 _BANNER = "This email originated from outside of RELEX"
@@ -57,6 +58,10 @@ class Document:
     doc_id: str
     doc_type: str
     doc_date: str
+    # The document's own summary of itself, taken from its first few lines: the transcript
+    # header's Meeting line, or a thread's Subject line. Never written by extraction, only
+    # read off the file, so it carries no more risk of invention than the rest of the header.
+    summary: str
     meta: dict[str, str]
     attendees: dict[str, str]  # name -> the parenthesised note in the header, e.g. "Acme CFO"
     units: list[Unit]
@@ -100,10 +105,19 @@ def parse_document(text: str, doc_id: str, doc_type: str) -> Document:
             else:
                 units = _parse_teams(lines, start)
             return Document(
-                doc_id, doc_type, meta["Date"], meta, _parse_attendees(meta["Attendees"]), units
+                doc_id,
+                doc_type,
+                meta["Date"],
+                meta.get("Meeting", ""),
+                meta,
+                _parse_attendees(meta["Attendees"]),
+                units,
             )
-        units = _parse_thread(lines)
-        return Document(doc_id, doc_type, units[0].sent, {}, {}, units)
+        units, subject = _parse_thread(lines)
+        # A thread has no attendee header, so "who's involved" is whoever actually sent a
+        # message — the same set a person skimming the file would arrive at.
+        people = dict.fromkeys((unit.name for unit in units if unit.name), "")
+        return Document(doc_id, doc_type, units[0].sent, subject, {}, people, units)
     except ValueError as error:
         raise ValueError(f"{doc_id}: {error}") from error
 
@@ -191,13 +205,17 @@ def _parse_internal(lines: list[str], start: int) -> list[Unit]:
     return units
 
 
-def _parse_thread(lines: list[str]) -> list[Unit]:
+def _parse_thread(lines: list[str]) -> tuple[list[Unit], str]:
     starts = [i for i, line in enumerate(lines) if _FROM.fullmatch(line.strip())]
     declared = next(
         (int(m[1]) for line in lines if (m := _THREAD_COUNT.fullmatch(line.strip()))), None
     )
     if declared != len(starts):
         raise ValueError(f"header says {declared} messages, found {len(starts)}")
+
+    # The topmost message is the newest (threads run reverse-chronological), so its Subject
+    # line is the first one in the file — the summary this document opens with.
+    subject = next((m[1].strip() for line in lines if (m := _SUBJECT_TEXT.match(line.strip()))), "")
 
     units = []
     for n, start in enumerate(starts, 1):
@@ -218,4 +236,4 @@ def _parse_thread(lines: list[str]) -> list[Unit]:
             if lines[i].strip() and not lines[i].startswith(_BANNER)
         ]
         units.append(Unit(name, None, parse_sent_date(sent), body))
-    return units
+    return units, subject

@@ -148,17 +148,8 @@ button p{margin:0;}
 .sc-pill-unresolved{background:var(--accent-soft);border-color:#c3d8ea;color:var(--accent);}
 .sc-quote{background:var(--chip-bg);border-radius:8px;padding:12px 14px;
   font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:20px;color:var(--text);}
-.sc-agreed, .sc-receipt{display:block;font-family:'IBM Plex Sans',sans-serif;font-size:12px;
+.sc-receipt{display:block;font-family:'IBM Plex Sans',sans-serif;font-size:12px;
   line-height:16px;color:var(--text-muted);}
-
-[class*="st-key-toggle_"] button{background:transparent !important;border:none !important;
-  box-shadow:none !important;padding:0 !important;height:auto !important;
-  min-height:auto !important;}
-[class*="st-key-toggle_"] button p{color:var(--text-faint) !important;
-  font-family:'IBM Plex Sans',sans-serif !important;font-size:12px !important;
-  font-weight:500 !important;}
-[class*="st-key-toggle_"] button:hover p{color:var(--accent) !important;}
-[class*="st-key-toggle_"]{align-self:flex-end !important;}
 </style>
 """.replace("__FONTS_HREF__", FONTS_HREF)
 
@@ -174,18 +165,6 @@ def document_label(document_id: str) -> str:
     match = DOC_LABEL_RE.match(document_id)
     stem = match.group(1) if match else document_id
     return stem.replace("-", " ").replace("_", " ").strip().capitalize()
-
-
-def location_label(location: dict) -> str:
-    page = location.get("page")
-    start = location.get("line_start")
-    end = location.get("line_end")
-    line_part = f"Line {start}" if start == end else f"Lines {start}–{end}"
-    label = f"Page {page}, {line_part}" if page else line_part
-    # D14's genre-specific pointer: the utterance offset for a transcript, or "message N of
-    # M" for an email thread or report — the actual "position in the conversation".
-    position = location.get("position")
-    return f"{label} · {position}" if position else label
 
 
 # status -> (pill label, css class). "current" has no entry on purpose: a pill is a warning, and
@@ -283,20 +262,24 @@ def stream_backend(question: str, result: dict) -> Iterator[str]:
 
 def render_source_row(citation: dict) -> None:
     statement_id = citation["statement_id"]
-    state_key = f"expanded_{statement_id}"
-    expanded = st.session_state.get(state_key, False)
-    container_key = f"source_active_{statement_id}" if expanded else f"source_{statement_id}"
+    container_key = f"source_{statement_id}"
 
     actor = citation.get("actor") or {}
-    location = citation.get("location") or {}
     name = html.escape(actor.get("name", ""))
-    role = html.escape(actor.get("role", ""))
     org = html.escape(actor.get("organization", ""))
     doc = html.escape(document_label(citation.get("document_id", "")))
     doc_date = date_label(str(citation.get("document_date", "")))
-    where = location_label(location)
     speech_act = html.escape(str(citation.get("speech_act", "")).capitalize())
     status_html = status_pill(citation.get("status", "current"))
+    claim = html.escape(citation.get("claim", ""))
+    # The ids that put a status there (D40), so a flagged citation shows its own justification.
+    # Shown, not computed: which statements those are is decided by the backend.
+    receipts = citation.get("status_receipts") or []
+    receipt_html = (
+        f'<span class="sc-receipt">Because of {", ".join(html.escape(r) for r in receipts)}</span>'
+        if receipts
+        else ""
+    )
 
     with st.container(key=container_key):
         st.markdown(
@@ -304,42 +287,16 @@ def render_source_row(citation: dict) -> None:
             <div class="sc-source-row">
               <span class="sc-source-badge">{citation.get("marker")}</span>
               <div class="sc-source-meta">
-                <span class="sc-source-name">{name} · {role}, {org}</span>
-                <span class="sc-source-doc">{doc} — {doc_date} · {where}</span>
+                <span class="sc-source-name">{name} · {org}</span>
+                <span class="sc-source-doc">{doc} — {doc_date}</span>
               </div>
               <span class="sc-pill">{speech_act}</span>{status_html}
             </div>
+            <div class="sc-quote">{claim}</div>
+            {receipt_html}
             """,
             unsafe_allow_html=True,
         )
-        toggle_label = "Hide quote ▴" if expanded else "Show quote ▾"
-        if st.button(toggle_label, key=f"toggle_{statement_id}"):
-            st.session_state[state_key] = not expanded
-            st.rerun()
-        if expanded:
-            agreed_by = citation.get("agreed_by") or []
-            agreed_html = ""
-            if agreed_by:
-                names = ", ".join(
-                    f"{html.escape(a['name'])} ({html.escape(a['organization'])})"
-                    for a in agreed_by
-                )
-                agreed_html = f'<span class="sc-agreed">Agreed by {names}</span>'
-            else:
-                agreed_html = '<span class="sc-agreed">No agreement appears in the record.</span>'
-            receipts = citation.get("status_receipts") or []
-            receipt_html = ""
-            if receipts:
-                ids = ", ".join(html.escape(receipt) for receipt in receipts)
-                receipt_html = f'<span class="sc-receipt">Because of {ids}</span>'
-            st.markdown(
-                f"""
-                <div class="sc-quote">“{html.escape(citation.get("verbatim_span", ""))}”</div>
-                {agreed_html}
-                {receipt_html}
-                """,
-                unsafe_allow_html=True,
-            )
 
 
 st.set_page_config(

@@ -1061,6 +1061,97 @@ an earlier failed attempt, not as current.
 ---
 
 ## D36 — 2026-09-19 — Accepted
+**The statements file groups statements under their document. `document_id`, `document_type`,
+`document_date`, the people involved and a document summary are carried once per document,
+not once per statement — `id`, `document_id` and `document_date` are no longer written on
+each statement at all, since they are cheaper to derive than to store.**
+
+Direction from Niek: cut the token cost of the statements file, which D2 already flagged as
+an unmeasured "hard ceiling" because the whole file goes into the answering model's context
+on every question. Every statement previously repeated its full document id (a path like
+`transcripts/07_2024-11-12_ordering-logic-design`), its document type and its document date
+verbatim — the same handful of strings, once per statement, on documents that run into dozens
+of statements each. None of that varies within a document, so none of it needs to.
+
+Shape: `{"documents": [{"id", "type", "date", "people", "summary", "statements": [...]}]}`.
+Each entry in `statements` carries only what genuinely varies per statement — `location`
+(line range plus D14's genre-specific pointer), `verbatim_span`, `claim`, `speech_act`,
+`handling`, `actor`, `agreed_by`, `statement_date` — and nothing document-level. `id` is
+gone too: extraction already assigns `f"{doc.doc_id}#{position}"` internally to link
+agreements (D28); backend/src/app/statements.py's `load_statements()` now derives the same
+string from array position when it flattens the file back into the `Statement` shape
+`llm_client.py`, `schemas.py` and the frontend already had — that shape does not change, so
+nothing downstream of `load_statements()` had to.
+
+**`people` and `summary` are new, both read off the document rather than invented.**
+`documents.py`'s `Document` gains a `summary` field: a transcript's `Meeting:` header line,
+or a thread's `Subject:` line (the topmost message's, since threads run newest-first) — the
+document's own summary of itself, in its own words, from its first few lines. `people` reuses
+the existing `attendees` mechanism: transcripts already had it from the `Attendees:` header;
+threads previously left it empty, and now get it populated from the set of actual message
+senders, since a thread has no attendee header and "who sent something" is the honest
+substitute for "who was in the room."
+
+**The same regrouping is reapplied in `backend/src/app/llm_client.py`, not just in the file
+on disk.** The file's shape only pays off if the backend forwards it that way: D2's actual
+cost is the payload rebuilt and resent to the model on every question, not the file at rest,
+which is loaded once and cached. `_grouped_payload()` regroups the flattened `Statement`
+objects back by `document_id` before base64-encoding, so `document_id`/`document_date` still
+appear once per document in `STATEMENTS_B64`, not once per statement. Citation resolution
+(D21) is untouched: statements still carry their own explicit `id` in this payload, so the
+model still cites exactly as it always has — only the JSON shape around each statement
+changed, not the trust mechanism.
+
+**What is explicitly *not* dropped, despite an interrupted earlier edit on this branch doing
+so:** `location` and `verbatim_span`. Both vary per statement, so hoisting does not apply to
+them, and CLAUDE.md rule 1 requires a real location and a real verbatim span on every
+citation — cutting either would fail provenance outright, not just shrink the file. A
+half-finished diff on this branch had removed both (along with `id`, `document_id`,
+`handling`, `agreed_by`, `role` and more) before this entry; that direction is reversed here.
+`role` and `agreed_by` are kept for the same reason — they are statement/actor-level, not
+document-level, and `agreed_by` in particular is half of requirement 2's score.
+
+Also dropped, deliberately, as real dead weight rather than as part of the hoisting: `label`
+on the actor (already folded into `name`, never read separately by anything downstream) and
+`location.page` (the corpus has no PDFs — D14 already retired the concept; the field stays on
+the backend's `Location` model, defaulting to `None`, since removing it there is a separate,
+unrequested schema change).
+
+Rejected:
+- *Leaving `document_id`/`document_type`/`document_date` on every statement and only adding
+  `people`/`summary` at the document level.* Half the ask — it adds the requested fields but
+  does nothing about the repetition that is the actual "massively reduce tokens" complaint.
+- *Writing an explicit `id` per statement even after grouping.* Either it repeats the
+  document id inside the group (defeats the point) or it's a bare per-statement counter that
+  still has to be written and read for no information a reader can't already get by counting
+  array position.
+- *Stopping at the file on disk and leaving `_build_messages` flattening everything back out.*
+  Correct-looking but pointless: the file is loaded once per process (D2's caching); the
+  model payload is rebuilt on every question, which is where the token count that motivated
+  this actually lives.
+
+*Cost:* `load_statements()` now does real reconstruction work (deriving ids, pulling
+`document_id`/`document_date` back onto every `Statement`) instead of a straight parse, and
+that reconstruction is now the one place the id scheme (`f"{document_id}#{position}"`) has to
+agree with what `extraction.py` computes internally for the exact same purpose — currently
+kept in sync by convention (both are "array position, 1-indexed"), not by shared code, since
+they live in different services with no shared library between them (D9 keeps them on one
+lockfile, not one codebase). If either side's numbering ever changes independently, agreed-by
+receipts and citation ids go out of sync silently rather than erroring. `people` for threads
+is derived from senders, not a real attendee list (threads have none) — it will list someone
+who sent one message and nothing else alongside someone central to the thread, with no way to
+tell the two apart from `people` alone.
+
+---
+
+## D36a — 2026-09-19 — Accepted
+
+*Numbering: this entry was written as D36 in PR #21. PR #23 then committed a second D36, on
+the statements file's grouping, under the same heading — a stash was committed with its
+conflict markers still in — and code and docs on `main` say D36 for the grouping. Both are
+kept; this one is D36a, and the two references to it (`statement_extraction/README.md` and
+`tests/test_extract_job.py`) say so.*
+
 **Fixes a production crash: `EXTRACTION_NUM_CTX`'s default raised 8192 → 32768, and one
 document's malformed model response no longer takes down the whole extraction run.**
 
@@ -1100,6 +1191,87 @@ D35 already accepted for other empty-document cases, extended to a new cause of 
 The stderr line (`"{doc_id}: extraction call failed (...)"`) is what distinguishes "the
 model genuinely found nothing" from "the call broke" in the log; nothing enforces that
 distinction downstream, since both feed the same `empty` list and the same exit code.
+
+---
+
+## D37 — 2026-09-19 — Accepted, supersedes part of D36
+
+**A persisted statement carries exactly `claim`, `actor` (`name`, `organization`),
+`speech_act`, `statement_date` — nothing else. `location`, `verbatim_span`, `agreed_by` and
+`actor.role` are removed from the statements file, from the backend's `Statement`/`Citation`
+models, from the answering prompt, and from what the frontend renders.**
+
+Direction from Niek: he asked for exactly this shape for `statements.json`, given as a
+literal example with these four fields and no others. I flagged, before making the change,
+that it reverses the part of D36 that explicitly kept `location` and `verbatim_span` (D36
+called removing them "a half-finished diff on this branch" and reversed it), and that
+CLAUDE.md rule 1 requires a citation to point at "a real location... and a verbatim span
+that actually appears there" — without them the system can no longer show the receipt the
+rubric's provenance slice (25%, [data-model.md](data-model.md)) is built to reward, and
+dropping `agreed_by`/`role` cuts into part of the attribution slice (20%) the same document
+describes. Niek confirmed he wanted the literal shape regardless. This entry is that
+argument, on the record, per CLAUDE.md's "argue in a new entry" rule — it does not overrule
+D36's reasoning, it overrides it on this project's owner's explicit instruction.
+
+**What actually changed, concretely:**
+- `statement_extraction/src/app/output.py`'s `to_statement()` needed no code change — a
+  prior, uncommitted, half-finished edit on this branch had already reduced it to this exact
+  shape (the same one D36 reversed). That edit is now the intended final state, not an
+  interruption to fix.
+- `statement_extraction/src/app/extraction.py` is untouched: it still asks the model for
+  `span`, `role`, `handling` and still runs `link_agreements`, and `extract_document` still
+  validates a claim's span against the real unit text before accepting it. None of that is
+  wasted: span-matching is still extraction's only defence against a hallucinated claim, it
+  is just no longer written to the file (`to_statement` already only reads `claim`, `act`,
+  `actor.name`/`actor.org`, `stated_on` off the record — "extra fields ride along" per its
+  own docstring). Whether to also stop computing `role`/`agreed_by` internally, now that
+  nothing downstream reads them, is left open — see Rejected.
+- `backend/src/app/statements.py`: `Location` model deleted; `Actor` loses `role`;
+  `Statement` and `_StatementBody` lose `location`, `verbatim_span`, `agreed_by`, gain
+  `claim: str`.
+- `backend/src/app/schemas.py`: `Citation` loses `location`, `verbatim_span`, `agreed_by`,
+  gains `claim: str`.
+- `backend/src/app/llm_client.py`: the system prompt no longer tells the model statements
+  carry a location, verbatim text, role or agreed-by list; rule 2 (agreements/decisions) no
+  longer conditions on `agreed_by`, since there is nothing to condition on — the model is
+  told to trust `speech_act` alone and never to name a specific agreeing party unless that
+  party's own statement is the agreement; rule 3 drops "and role". `_resolve_citations` and
+  `_dummy_answer` build citations/sentences from `claim` instead of `verbatim_span`, and
+  drop role from the actor description.
+- `backend/src/app/data/mock_statements.json`: rewritten to the new shape; each
+  `verbatim_span` was turned into a `claim` (a plain-sentence paraphrase, by hand, in the
+  style `extraction.py`'s prompt asks the model for) since a claim did not previously exist
+  on the mock data.
+- `frontend/app.py`: `location_label()` deleted; `render_source_row()` no longer shows role,
+  location, or an expand/collapse "Show quote" — there is no verbatim quote left to reveal,
+  so the claim is shown inline instead, unconditionally. The agreed-by line is gone.
+- `docs/data-model.md`: the provenance and attribution sections now say, per field, whether
+  it is still stored, rather than describing a shape the code no longer produces.
+
+**What this costs, plainly:** a citation from this system now points a judge at a document
+and a paraphrased claim, attributed to a named person at a named organisation, dated — not
+at a real line range and not at a verbatim quote they can diff against the source file. That
+is a real reduction against the provenance slice of the rubric this corpus was built to
+score, not a cosmetic one. Extraction's span-matching still guarantees the claim is grounded
+in real text at extraction time, but that guarantee is no longer independently checkable by
+a judge from the output, which was the entire point of carrying the span forward. Deletion
+still has one place to reach — the claim replaces the verbatim span as the place a redacted
+name can hide (see [data-model.md](data-model.md), "What deletion has to touch") — so CLAUDE.md
+rule 3/4 are not affected, only rule 1.
+
+Rejected:
+- *Keeping `location`/`verbatim_span` and only trimming `agreed_by`/`role`.* This was the
+  first option offered; Niek explicitly chose the fuller cut instead.
+- *Also stripping `role`/`agreed_by`/`handling` out of extraction's own schema and prompt,
+  and deleting `link_agreements` entirely, since nothing downstream reads their output any
+  more.* Not done here — that is a real efficiency win (fewer model calls per document) but
+  a separate, larger change to `extraction.py`'s tested internals than "change the output
+  shape", and this entry's scope is the persisted/served shape, not extraction's internal
+  validation machinery. Left as a known follow-up, not silently decided either way.
+- *Renaming `Citation` or its fields to signal it is no longer a verified quote.* Not done —
+  out of scope for a schema-shape change and not requested; the cost above is recorded here
+  instead of encoded in a new name.
+
 
 ---
 
@@ -1405,3 +1577,80 @@ cache, which on a 27B model at long context is a GPU memory question this entry 
 on a clean artifact. That needs a model serving 128k and the memory to back it, and D2 — the
 whole record in context, no retrieval — is riding on it. The four-document record is 25,371
 tokens by the backend's own estimate. Measure the VM model before committing to no retrieval.
+
+---
+
+## D44 — 2026-09-19 — Accepted *(extends D36 and D37 to the reconciled file)*
+**`reconciled.json` is reduced the way `statements.json` was: document-level fields once, in a
+`documents` table; per statement only `id`, `claim`, `actor{name, organization}`,
+`speech_act`, `statement_date` and `status`. The answering model is shown each statement under a
+short alias rather than its real id.**
+
+D36 and D37 cut the statements file and the payload built from it, and left the second
+artifact — the one the answering path reads by default (D40) — carrying everything the first
+had dropped. Direction from David, who owns this branch: apply the same reductions to the
+reconciliation layer, keeping what the layer is for. What it keeps is untouched: topics,
+relations, statuses, receipts, summaries and problems.
+
+**What the file no longer carries per statement:** `document_id`, `doc_type`, `document_date`,
+`location`, `verbatim_span`, `agreed_by`, `handling`, and the actor's `label` and `role`. Each
+is what D36/D37 already removed from the statements file, for the same reasons. The
+`documents` table holds `id`, `type`, `date`, `people` and `summary` once per document, the
+envelope the statements file already uses. The backend rebuilds `document_id` from the
+statement id and `document_date` from that table, and `to_reconciled` refuses to write a
+statement whose document is not in the table, so a missing one fails where it is written and
+not as a citation with no date.
+
+**Why `id` stays.** D36 dropped it from the statements file because array position gives it
+back. Here the statements are nested by topic, and relations, problem lists and summary
+receipts all name statements by id, so it is load-bearing. Its scheme is unchanged
+(`<document id>#<position>`), so nothing keyed on an id in `statements.json` has to change.
+
+**The larger saving is in what the model is sent, not in the file.** Measured on the
+92-statement artifact from the four-document run (D41), as the size of the JSON the answering
+model receives:
+
+| | chars | of today's |
+|---|---|---|
+| before | 82,588 | 100% |
+| + the columns above removed | 48,873 | 59% |
+| + short ids | 35,525 | 43% |
+| + omitting `current` statuses | 35,399 | 43% |
+
+Short ids matter more than they look because 47% of what is left is relations and problems,
+and those are almost nothing but ids: a real id is a document path and a position, and it was
+repeated in every relation, every problem, and every summary receipt that named the statement.
+`_aliases()` in `llm_client.py` hands the model `s1`, `s2`, … in the record's own order and
+`_resolve_citations` maps what it cites back. An alias we did not hand out resolves to nothing
+and is dropped, and a real id does too, so D21's trust boundary is where it was; it is the
+device `reconcile.py` already uses on its own side (`S1`…). Nothing is stored: the map is
+derived from the record on each call, so it is not a third derived artifact for deletion to
+reach (CLAUDE.md rule 4). Problem notes are aliased too, since the templated ones write real
+ids into their sentence. The replacement has two guards, each tested on its own: longest
+first, since one id can be the tail of another, and never in front of a digit, since `doc#1` is
+the start of `doc#12`. `statement_date` is sent as a day: extraction only
+ever writes one, and a datetime added a time of day nobody recorded to every statement.
+
+Rejected:
+- *Short ids in the file itself.* It would make `reconciled.json` ids differ from
+  `statements.json` ids, and anything a deletion receipt or a citation says about a statement
+  would then need translating between the two. The alias belongs where the tokens are spent.
+- *Omitting `status` when it is `current`.* Measured at 0.4%, and it turns an explicit field
+  into a default a small model has to remember.
+- *One `unanswered` problem per topic instead of one per statement.* On that artifact 53 of 67
+  problems were the template for a single unresolved statement, and the block was 37% of the
+  payload, so it is the next largest win. It is also a change to what `problems_for` means and
+  to its tests, on an artifact whose shape came from a 0.6b model that called 83 of 92
+  statements a proposal; a real corpus may not have the problem. Left as a follow-up to
+  measure on a real run, not decided either way.
+
+*Cost:* this is D37's reversal of CLAUDE.md rule 1, extended. A citation from the reconciled
+file now points at a document and a paraphrased claim, not at a line range or a quote a judge
+can diff against the source, and D37 records that cost in full; this entry adds nothing to it
+except that it is now true of both files. Deletion keeps one place to reach — the claim is where
+a redacted name can hide, as in D37 — and gains the topic summaries and problem notes (D40,
+rule 4). The `<document>#<position>` scheme is now agreed between extraction and the backend by
+convention only: change either side's numbering and the backend derives the wrong document
+silently. The token guard's constant (D43) was measured on the old, larger shape and not
+re-measured on this one; the shorter ids may tokenise worse per character, so treat its estimate
+as an order of magnitude until it is.

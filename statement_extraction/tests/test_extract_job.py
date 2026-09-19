@@ -91,8 +91,9 @@ def reconciled_file(job: Path) -> Path:
 def test_a_run_that_finds_statements_writes_the_file_and_succeeds(job: Path):
     assert extract.main([]) == 0
     written = json.loads(job.read_text(encoding="utf-8"))
-    assert list(written) == ["statements"]
-    assert [s["document_id"] for s in written["statements"]] == ["transcripts/01_kickoff"]
+    assert list(written) == ["documents"]
+    assert [d["id"] for d in written["documents"]] == ["transcripts/01_kickoff"]
+    assert len(written["documents"][0]["statements"]) == 1
 
 
 def test_a_run_that_reconciles_writes_both_files_and_succeeds(job: Path):
@@ -105,6 +106,22 @@ def test_a_run_that_reconciles_writes_both_files_and_succeeds(job: Path):
     assert [(s["id"], s["status"]) for s in topic["statements"]] == [
         ("transcripts/01_kickoff#1", "current")
     ]
+
+
+def test_the_reconciled_file_carries_its_documents_once_and_slim_statements(job: Path):
+    """The whole path, end to end: a job's real output has the reduced shape (D44), not just
+    to_reconciled called by hand."""
+    assert extract.main([]) == 0
+    reconciled = json.loads(reconciled_file(job).read_text(encoding="utf-8"))
+    [document] = reconciled["documents"]
+    assert document["id"] == "transcripts/01_kickoff"
+    assert (document["type"], document["date"], document["summary"]) == (
+        "transcript",
+        "2024-03-20",
+        "Kickoff",
+    )
+    [statement] = reconciled["topics"][0]["statements"]
+    assert set(statement) == {"id", "claim", "speech_act", "actor", "statement_date", "status"}
 
 
 def test_a_failed_reconciliation_fails_the_job_and_writes_no_reconciled_file(
@@ -224,7 +241,7 @@ def test_a_documents_file_lands_before_the_next_document_is_asked_for(
         if "02_other" in messages[1]["content"]:
             assert first_doc_file.exists()
             written = json.loads(first_doc_file.read_text(encoding="utf-8"))
-            assert [s["document_id"] for s in written["statements"]] == ["transcripts/01_kickoff"]
+            assert [d["id"] for d in written["documents"]] == ["transcripts/01_kickoff"]
         return both(messages, schema)
 
     both = answering(tags=TWO_DOCUMENTS)
@@ -247,14 +264,25 @@ def test_a_run_that_finds_nothing_leaves_the_per_document_file_for_inspection(
     )
     assert extract.main([]) == 1
     doc_file = job.parent / "documents" / "transcripts" / "01_kickoff.json"
-    assert json.loads(doc_file.read_text(encoding="utf-8")) == {"statements": []}
+    assert json.loads(doc_file.read_text(encoding="utf-8")) == {
+        "documents": [
+            {
+                "id": "transcripts/01_kickoff",
+                "type": "transcript",
+                "date": "2024-03-20",
+                "people": ["Bo Ray"],
+                "summary": "Kickoff",
+                "statements": [],
+            }
+        ]
+    }
 
 
 def test_a_malformed_model_response_does_not_crash_the_whole_run(
     job: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """A truncated/invalid JSON response from the model (seen in production once a whole
-    document goes in one call — D31/D36) must not take the rest of the corpus down with
+    document goes in one call — D31/D36a) must not take the rest of the corpus down with
     it: the job keeps going and reports the bad document as empty, same as one that
     legitimately produced nothing."""
     other = job.parent / "corpus" / "transcripts" / "02_other.txt"
@@ -268,7 +296,11 @@ def test_a_malformed_model_response_does_not_crash_the_whole_run(
     monkeypatch.setattr(extract, "_ollama_chat", lambda *_: broken_for_the_first)
     assert extract.main([]) == 1
     written = json.loads(job.read_text(encoding="utf-8"))
-    assert [s["document_id"] for s in written["statements"]] == ["transcripts/02_other"]
+    assert [d["id"] for d in written["documents"]] == [
+        "transcripts/01_kickoff",
+        "transcripts/02_other",
+    ]
+    assert [len(d["statements"]) for d in written["documents"]] == [0, 1]
 
 
 def test_a_run_that_finds_nothing_fails_and_leaves_the_old_file_alone(
@@ -296,7 +328,8 @@ def test_a_document_with_no_statements_fails_the_job_but_keeps_the_rest(
 
     monkeypatch.setattr(extract, "_ollama_chat", lambda *_: only_the_first)
     assert extract.main([]) == 1
-    assert len(json.loads(job.read_text(encoding="utf-8"))["statements"]) == 1
+    written = json.loads(job.read_text(encoding="utf-8"))["documents"]
+    assert sum(len(d["statements"]) for d in written) == 1
 
 
 def test_no_model_named_means_no_run(job: Path, monkeypatch: pytest.MonkeyPatch):

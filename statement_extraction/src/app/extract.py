@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx
 
-from .documents import load_corpus
+from .documents import Document, load_corpus
 from .extraction import SCHEMA, Chat, extract_document, link_agreements
 from .output import to_reconciled, to_statement
 from .reconcile import ReconcileError, reconcile
@@ -40,15 +40,35 @@ def _ollama_chat(client: httpx.Client, model: str, num_ctx: int) -> Chat:
     return chat
 
 
-def _write_json(path: Path, statements: list[dict]) -> None:
+def _write_json(path: Path, documents: list[dict]) -> None:
     """Written whole or not at all: a half-written file must never look like the record."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(
-        json.dumps({"statements": statements}, ensure_ascii=False, indent=2) + "\n",
+        json.dumps({"documents": documents}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     os.replace(tmp, path)
+
+
+def _document_head(doc: Document) -> dict:
+    """What is true of every statement in a document, carried once. Both files use it: the
+    statements file puts the statements inside it, and the reconciled file keeps it as a table
+    and nests the statements under their topics instead (D44)."""
+    return {
+        "id": doc.doc_id,
+        "type": doc.doc_type,
+        "date": doc.doc_date,
+        "people": list(doc.attendees),
+        "summary": doc.summary,
+    }
+
+
+def _document_block(doc: Document, found: list[dict]) -> dict:
+    """One document's envelope: its head, plus its statements. Backend/src/app/statements.py
+    puts document_id/document_date back on each statement when it loads this (docs/decisions.md
+    D36) — nothing downstream of that function has to know the file is grouped."""
+    return {**_document_head(doc), "statements": [to_statement(record) for record in found]}
 
 
 def main(filters: list[str]) -> int:
@@ -120,18 +140,19 @@ def main(filters: list[str]) -> int:
                 f"{doc.doc_id}: {len(found)} statements{note}, responses {dict(linked)}", flush=True
             )
             doc_out = per_doc_dir / f"{doc.doc_id}.json"
-            _write_json(doc_out, [to_statement(record) for record in found])
+            _write_json(doc_out, [_document_block(doc, found)])
             print(f"  wrote {doc_out}", flush=True)
 
     # The massive file is exactly these, concatenated in the same order docs were walked in.
     merged: list[dict] = []
     for doc in docs:
         doc_out = per_doc_dir / f"{doc.doc_id}.json"
-        merged.extend(json.loads(doc_out.read_text(encoding="utf-8"))["statements"])
+        merged.extend(json.loads(doc_out.read_text(encoding="utf-8"))["documents"])
+    total_statements = sum(len(document["statements"]) for document in merged)
 
     # Nothing extracted must not look like a finished record: exit non-zero so compose holds
     # the backend, and leave any earlier file alone.
-    if not merged:
+    if not total_statements:
         print("No statements were extracted, so nothing was written.", file=sys.stderr)
         return 1
 
@@ -143,7 +164,7 @@ def main(filters: list[str]) -> int:
     # behind, which is the point, but a clean run does not.
     shutil.rmtree(per_doc_dir, ignore_errors=True)
     partial = f" (only {len(docs)} of {total} documents)" if len(docs) < total else ""
-    print(f"Wrote {len(merged)} statements to {out}{partial}")
+    print(f"Wrote {total_statements} statements across {len(merged)} documents to {out}{partial}")
     if empty:
         # A document with no statements is a silent gap in the record, so the job fails.
         print(f"No statements from: {', '.join(empty)}", file=sys.stderr)
@@ -175,7 +196,9 @@ def main(filters: list[str]) -> int:
         return 1
 
     tmp = reconciled_out.with_name(reconciled_out.name + ".tmp")
-    reconciled = to_reconciled(topics, problems, date.today().isoformat())
+    reconciled = to_reconciled(
+        topics, problems, date.today().isoformat(), [_document_head(doc) for doc in docs]
+    )
     tmp.write_text(json.dumps(reconciled, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, reconciled_out)
     print(f"Dropped in reconciliation: {dict(discarded)}" if discarded else "Nothing dropped.")
