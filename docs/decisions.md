@@ -443,6 +443,11 @@ Rejected:
 full corpus. The quote check proves the words exist in that person's statement, not that they
 answer this proposal: in the test on email 07, two of three links were right and one attached a
 "Confirmed" that was about a different point. A reply more than eight statements away is missed.
+Candidates are picked by the first pass's label, so a request labelled `report` is never linked:
+when the full job ran on the same email, the model merged "It must be excluded at source before
+the next extract runs" into the sentence before it as a `report`, and only two links were found,
+one right and one doubtful (Kwame's "Answer on the historic files", taken as agreeing to a
+different request). Both wobbles came from a 4B model and may be smaller on a bigger one.
 So an empty `agreed_by` now means no answer was found nearby, not that none exists. It is also the
 place a wrong "who agreed" could reach an answer, so the answering side should cite the agreeing
 statement whenever it says someone agreed.
