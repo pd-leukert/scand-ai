@@ -67,6 +67,26 @@ Units are taken in order and their words are added up. When the next unit would 
 300 words came from testing: at 1000 words the 4B model kept 22 statements and dropped 28, and at
 300 it kept 48 and dropped none. A smaller number is more reliable but means more model calls.
 
+### Why chunk instead of sending everything to the model
+
+- **The model lost coverage on long input.** At 1000 words the 4B model stopped covering the
+  document part way through. Small models do better on short passages (D18).
+- **The output is large.** The corpus is about 58,600 words and should give roughly 2,000 to 3,600
+  statements. One answer cannot hold that many, and a long JSON answer is more likely to break or
+  cut off. Even one long document produces a lot.
+- **The context window is limited.** `EXTRACTION_NUM_CTX` defaults to 8192. The prompt, the
+  document text and the answer all have to fit, and a longer context costs more memory and time.
+- **Verification needs units.** The model returns a unit number and a quote, and code finds the
+  quote in that unit to get the line numbers. Sending the whole archive at once would make that
+  check weaker and could pin a statement on the wrong document.
+
+The 300-word default was tuned on a 4B model on a laptop. A much larger model on the Verda GPU
+may handle bigger batches, which would mean fewer calls and more context around each statement.
+Sending the whole corpus in one call would still hit the output limit. To test it, run one
+document twice, with `EXTRACTION_BATCH_WORDS=300` and then `1000` with `EXTRACTION_NUM_CTX` raised
+(for example `16384`), and compare the kept and dropped counts in the log. If the larger batch is
+at least as good, switch to it and add a short entry to [decisions.md](decisions.md).
+
 The agreement pass (D20) does not use batches. It looks at each proposal or question and the next
 eight statements by other people in the same document.
 
