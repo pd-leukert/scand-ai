@@ -1,99 +1,88 @@
 {
-  "statements": [
+  "documents": [
     {
-      "id": "stmt-001",
-      "document_id": "workshop-notes-2026-03-12",
-      "location": { "page": null, "line_start": 41, "line_end": 42 },
-      "verbatim_span": "I'd suggest we target October 1st for go-live, but that's just a starting point for discussion.",
-      "actor": { "name": "Aino Salo", "organization": "RELEX", "role": "Implementation Consultant" },
-      "agreed_by": [],
-      "speech_act": "proposal",
-      "statement_date": "2026-03-12T10:15:00",
-      "document_date": "2026-03-12"
+      "id": "workshop-notes-2026-03-12",
+      "type": "transcript",
+      "date": "2026-03-12",
+      "people": ["Aino Salo", "Marko Virtanen"],
+      "summary": "Go-live date workshop",
+      "statements": [
+        {
+          "claim": "Aino Salo suggested targeting October 1st for go-live, as a starting point for discussion.",
+          "actor": { "name": "Aino Salo", "organization": "RELEX" },
+          "speech_act": "proposal",
+          "statement_date": "2026-03-12T10:15:00"
+        },
+        {
+          "claim": "Marko Virtanen agreed to pencil in October 1st for go-live, to be confirmed once the data migration plan is ready.",
+          "actor": { "name": "Marko Virtanen", "organization": "Nordica Retail" },
+          "speech_act": "agreement",
+          "statement_date": "2026-03-12T10:17:00"
+        }
+      ]
     },
     {
-      "id": "stmt-002",
-      "document_id": "workshop-notes-2026-03-12",
-      "location": { "page": null, "line_start": 44, "line_end": 45 },
-      "verbatim_span": "Agreed — let's pencil in October 1st and confirm once the data migration plan is ready.",
-      "actor": { "name": "Marko Virtanen", "organization": "Nordica Retail", "role": "Head of Supply Chain" },
-      "agreed_by": [
-        { "name": "Marko Virtanen", "organization": "Nordica Retail", "role": "Head of Supply Chain" }
-      ],
-      "speech_act": "agreement",
-      "statement_date": "2026-03-12T10:17:00",
-      "document_date": "2026-03-12"
+      "id": "status-report-2026-06-30",
+      "type": "report",
+      "date": "2026-06-30",
+      "people": ["Marko Virtanen"],
+      "summary": "Go-live status update",
+      "statements": [
+        {
+          "claim": "The October 1 go-live date remains on track pending final UAT sign-off.",
+          "actor": { "name": "Marko Virtanen", "organization": "Nordica Retail" },
+          "speech_act": "report",
+          "statement_date": "2026-06-30T09:00:00"
+        }
+      ]
     },
     {
-      "id": "stmt-003",
-      "document_id": "status-report-2026-06-30",
-      "location": { "page": null, "line_start": 12, "line_end": 13 },
-      "verbatim_span": "The October 1 go-live date remains on track pending final UAT sign-off.",
-      "actor": { "name": "Marko Virtanen", "organization": "Nordica Retail", "role": "VP of Operations" },
-      "agreed_by": [],
-      "speech_act": "report",
-      "statement_date": "2026-06-30T09:00:00",
-      "document_date": "2026-06-30"
+      "id": "email-thread-2026-07-05",
+      "type": "email",
+      "date": "2026-07-05",
+      "people": ["Marko Virtanen", "Petra Lindqvist"],
+      "summary": "Go-live date moved to November 15th",
+      "statements": [
+        {
+          "claim": "Marko Virtanen decided to move the go-live date to November 15th because of UAT delays.",
+          "actor": { "name": "Marko Virtanen", "organization": "Nordica Retail" },
+          "speech_act": "decision",
+          "statement_date": "2026-07-05T14:32:00"
+        },
+        {
+          "claim": "Petra Lindqvist objected that pushing to November 15th puts the project inside the year-end freeze window.",
+          "actor": { "name": "Petra Lindqvist", "organization": "RELEX" },
+          "speech_act": "objection",
+          "statement_date": "2026-07-05T16:05:00"
+        }
+      ]
     },
     {
-      "id": "stmt-004",
-      "document_id": "email-thread-2026-07-05",
-      "location": { "page": null, "line_start": 8, "line_end": 9 },
-      "verbatim_span": "Given the UAT delays, we are moving the go-live date to November 15th.",
-      "actor": { "name": "Marko Virtanen", "organization": "Nordica Retail", "role": "VP of Operations" },
-      "agreed_by": [
-        { "name": "Marko Virtanen", "organization": "Nordica Retail", "role": "VP of Operations" }
-      ],
-      "speech_act": "decision",
-      "statement_date": "2026-07-05T14:32:00",
-      "document_date": "2026-07-05"
-    },
-    {
-      "id": "stmt-005",
-      "document_id": "email-thread-2026-07-05",
-      "location": { "page": null, "line_start": 15, "line_end": 17 },
-      "verbatim_span": "Pushing to November 15th puts us inside the year-end freeze window; I'd flag that risk before we commit.",
-      "actor": { "name": "Petra Lindqvist", "organization": "RELEX", "role": "Delivery Manager" },
-      "agreed_by": [],
-      "speech_act": "objection",
-      "statement_date": "2026-07-05T16:05:00",
-      "document_date": "2026-07-05"
-    },
-    {
-      "id": "stmt-006",
-      "document_id": "steering-committee-2026-09-01",
-      "location": { "page": 3, "line_start": 5, "line_end": 6 },
-      "verbatim_span": "We will hold at November 15th; the freeze window risk is accepted.",
-      "actor": { "name": "Marko Virtanen", "organization": "Nordica Retail", "role": "VP of Operations" },
-      "agreed_by": [
-        { "name": "Marko Virtanen", "organization": "Nordica Retail", "role": "VP of Operations" },
-        { "name": "Jussi Koskinen", "organization": "RELEX", "role": "Engagement Lead" }
-      ],
-      "speech_act": "decision",
-      "statement_date": "2026-09-01T11:20:00",
-      "document_date": "2026-09-01"
-    },
-    {
-      "id": "stmt-007",
-      "document_id": "steering-committee-2026-09-01",
-      "location": { "page": 4, "line_start": 18, "line_end": 19 },
-      "verbatim_span": "I'd propose we also pilot the new replenishment module with two stores before full rollout.",
-      "actor": { "name": "Aino Salo", "organization": "RELEX", "role": "Senior Implementation Consultant" },
-      "agreed_by": [],
-      "speech_act": "proposal",
-      "statement_date": "2026-09-01T11:41:00",
-      "document_date": "2026-09-01"
-    },
-    {
-      "id": "stmt-008",
-      "document_id": "steering-committee-2026-09-01",
-      "location": { "page": 4, "line_start": 20, "line_end": 20 },
-      "verbatim_span": "Can we get a firm answer on the replenishment pilot scope by next Friday?",
-      "actor": { "name": "Jussi Koskinen", "organization": "RELEX", "role": "Engagement Lead" },
-      "agreed_by": [],
-      "speech_act": "question",
-      "statement_date": "2026-09-01T11:42:00",
-      "document_date": "2026-09-01"
+      "id": "steering-committee-2026-09-01",
+      "type": "transcript",
+      "date": "2026-09-01",
+      "people": ["Marko Virtanen", "Jussi Koskinen", "Aino Salo"],
+      "summary": "Steering committee: go-live confirmed, replenishment pilot proposed",
+      "statements": [
+        {
+          "claim": "Marko Virtanen decided to hold at November 15th for go-live, accepting the freeze window risk.",
+          "actor": { "name": "Marko Virtanen", "organization": "Nordica Retail" },
+          "speech_act": "decision",
+          "statement_date": "2026-09-01T11:20:00"
+        },
+        {
+          "claim": "Aino Salo proposed piloting the new replenishment module with two stores before full rollout.",
+          "actor": { "name": "Aino Salo", "organization": "RELEX" },
+          "speech_act": "proposal",
+          "statement_date": "2026-09-01T11:41:00"
+        },
+        {
+          "claim": "Jussi Koskinen asked for a firm answer on the replenishment pilot scope by next Friday.",
+          "actor": { "name": "Jussi Koskinen", "organization": "RELEX" },
+          "speech_act": "question",
+          "statement_date": "2026-09-01T11:42:00"
+        }
+      ]
     }
   ]
 }

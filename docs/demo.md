@@ -41,9 +41,11 @@ Five minutes. Four of these five items are scored slices; the fifth is what make
 judges believe the other four.
 
 1. **A question with receipts.** Ask something about a decision. Show the answer, then
-   expand a claim to the document, the location, and the quoted line. Let them pick the
-   claim to expand. For a transcript, land on the utterance — "position in the
-   conversation" is the phrase in the brief.
+   expand a claim to its source list: the document, who said it, and when. Let them pick
+   the claim to expand. As of D37 this no longer lands on a verbatim quoted line or a
+   location inside the document — see [decisions.md](decisions.md) D37 — so do not promise
+   "position in the conversation" here; that phrase from the brief is no longer something
+   this demo delivers.
 2. **Suggestion versus commitment.** Ask about something that was proposed and never
    agreed. The valuable answer is "X proposed it on <date>; no agreement from the customer
    appears in the record" — with the citation for the proposal, and nothing invented for
