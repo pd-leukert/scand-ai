@@ -52,6 +52,7 @@ docs/
   roadmap.md        MVP boundary, planned extensions, honest limits
   demo.md           judging prep: what we show, in what order
   extraction.md     how extraction works and how to run it, locally and on Verda
+  whats-left.md     what is done, what is blocked, what is unowned — updated in place
 CLAUDE.md           working agreement for humans and coding agents
 ```
 

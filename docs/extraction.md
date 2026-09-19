@@ -251,6 +251,8 @@ once extraction has run for real (D18).
 
 ## Known limits, and what is next
 
+The team-wide list of what is left, with owners and blockers, is in [whats-left.md](whats-left.md).
+
 - **Only one transcript has been run with a real model.** Emails and report threads are
   covered by parser tests, but the prompt has not been tried on them.
 - **The full run is blocked on a GPU.** Until it exists there is no `statements.jsonl` for the
