@@ -1,14 +1,78 @@
 name: scand-ai
 
 services:
+  # Local inference for both the extraction job and the answering path. No external model
+  # API ever sees the archive — see CLAUDE.md and D8. Reached as http://ollama:11434 on
+  # the compose network; also published on loopback so `ollama` and `curl` work on the VM.
+  #
+  # Defaults are the laptop: CPU, a small model, a throwaway volume. The VM becomes itself
+  # by setting OLLAMA_RUNTIME, OLLAMA_DATA_DIR and LLM_MODEL. See D25 and the README.
+  ollama:
+    image: ollama/ollama
+    # `runc` is the stock runtime and ignores GPUs. The VM sets OLLAMA_RUNTIME=nvidia,
+    # which is the one GPU knob that an environment variable can actually turn: a
+    # `deploy.resources.reservations.devices` block cannot be switched off by
+    # interpolation, so it is not used here. See D25.
+    runtime: ${OLLAMA_RUNTIME:-runc}
+    volumes:
+      # No slash: a named volume, created empty, fine for a laptop. The VM sets
+      # OLLAMA_DATA_DIR=/root/ollama-data, an absolute path, which compose reads as a bind
+      # instead — so the weights already downloaded there are reused, never re-fetched.
+      - ${OLLAMA_DATA_DIR:-ollama-models}:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    environment:
+      # Verified to be harmless on CPU — llama.cpp enables both and serves normally — so
+      # these are not part of the switch.
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=q8_0
+      - OLLAMA_KEEP_ALIVE=30m
+      # Only read when runtime is nvidia; inert under runc.
+      - NVIDIA_VISIBLE_DEVICES=all
+    healthcheck:
+      # `ollama list` goes through the HTTP API, so this is a real readiness check.
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # A job: pulls the weights into the server's volume and exits. Nothing that calls a
+  # model starts until it has, so a first query can never 404 on a missing model. Pulling
+  # a model that is already there is a no-op, so this costs seconds on every later
+  # `compose up`.
+  ollama-pull:
+    image: ollama/ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - ANSWERING_MODEL=${LLM_MODEL:-qwen3:0.6b}
+      - EXTRACTION_MODEL=${EXTRACTION_LLM_MODEL:-${LLM_MODEL:-qwen3:0.6b}}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - ollama pull "$$ANSWERING_MODEL" && ollama pull "$$EXTRACTION_MODEL"
+    restart: "no"
+
   # A job, not a service: it runs once, writes the statements file, and exits 0. Nothing
   # else starts until it has. See docs/decisions.md D12.
   statement-extraction:
     build:
       context: .
       dockerfile: statement_extraction/Dockerfile
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
     volumes:
       - statements:/data
+    environment:
+      # Extraction's model is configured separately from the answering model on purpose —
+      # they are allowed to differ (CLAUDE.md, "the model is a configuration value").
+      - EXTRACTION_LLM_BASE_URL=http://ollama:11434/v1
+      - EXTRACTION_LLM_MODEL=${EXTRACTION_LLM_MODEL:-${LLM_MODEL:-qwen3:0.6b}}
     # Never restart a job that has finished.
     restart: "no"
 
@@ -19,9 +83,16 @@ services:
     depends_on:
       statement-extraction:
         condition: service_completed_successfully
+      ollama:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
     volumes:
       # Read-only: extraction is the only writer of the derived artifact.
       - statements:/data:ro
+    environment:
+      - LLM_BASE_URL=http://ollama:11434/v1
+      - LLM_MODEL=${LLM_MODEL:-qwen3:0.6b}
     # Deliberately not published — the backend is reachable from the compose network only.
     expose:
       - "8000"
@@ -60,3 +131,6 @@ volumes:
   # The statements file: written once by extraction, read by the backend. One derived
   # artifact, one place it lives.
   statements:
+  # Laptop model store. The VM sets OLLAMA_DATA_DIR and binds its own directory instead,
+  # leaving this one unused.
+  ollama-models:

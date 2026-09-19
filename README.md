@@ -82,13 +82,34 @@ are the ones that protect our score.
 docker compose up --build
 ```
 
+On a laptop that is all of it: no flags, no `.env`, CPU only, and a small model
+(`qwen3:0.6b`, ~520 MB) pulled automatically. Enough to prove the wiring end to end, and
+nothing at all about answer quality.
+
+The VM is the same command plus three environment variables, set once in Coolify:
+
+```
+OLLAMA_RUNTIME=nvidia                    # stock runtime ignores the GPU without this
+OLLAMA_DATA_DIR=/root/ollama-data        # bind the weights already on disk
+LLM_MODEL=qwen3.8:27b-mtp-bf16           # also drives extraction unless overridden
+```
+
+Set none of them and you get the laptop stack; set all three and you get the real one.
+They are independent, so a partial set runs in a half-state rather than failing — a 27B
+model on CPU will crawl, not error. See [decision D25](docs/decisions.md).
+
 Statement extraction runs first; the backend and the frontend do not start until it has
 finished and exited. The UI is then on <http://localhost:8501>. The backend is not
 published — it is reachable from inside the compose network only, which is what
 [architecture.md](docs/architecture.md) asks for.
 
-Ollama is not in the compose file yet, and nothing calls a model. See
-[decision D13](docs/decisions.md).
+Ollama runs as a fourth container on the same VM, with all GPUs reserved. A one-shot
+`ollama-pull` job downloads the model into a named volume before extraction or the backend
+start, so the first question can never hit a missing model; a re-pull of a model that is
+already there is a no-op, so only the first run is slow. Both models are configuration —
+`LLM_MODEL` for answering, `EXTRACTION_LLM_MODEL` for extraction, the latter defaulting to
+the former. See [decision D23](docs/decisions.md) for the Ollama service and
+[D25](docs/decisions.md) for the laptop/VM switch.
 
 ## Status
 
