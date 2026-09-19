@@ -693,3 +693,42 @@ defaults pull the small model and answer over `/v1/chat/completions`. **Not** ve
 path. Check `docker info | grep -A3 -i runtimes` on the VM before trusting this; if
 `nvidia` is not listed, run `nvidia-ctk runtime configure --runtime=docker` and restart
 the daemon, or revert to D24's file-based switch.
+
+---
+
+## D26 — 2026-09-19 — Accepted
+**`ollama-pull` prints its resolved configuration and warns on the two half-set states.
+Confirms D25's cost rather than reversing it.**
+
+D25 traded away the one property D24 had — "there is no flag to forget" — and named the
+consequence: three independent variables, and partial states that are silent. The first
+real deploy hit it immediately. Coolify had `OLLAMA_RUNTIME=nvidia` but not
+`OLLAMA_DATA_DIR`, and the log said only `Volume ollama-models Creating`. Nothing was
+wrong enough to fail; it was simply about to re-download ~54GB it already had on disk.
+
+So the pull job now prints runtime, model store and both model names as a banner before it
+pulls, and warns on the two combinations that are wrong rather than merely unusual: a GPU
+runtime with no `OLLAMA_DATA_DIR` (re-downloads the weights), and a 27B-class model on the
+`runc` runtime (runs, but far too slowly to demo). Both were tested against all four
+laptop/VM permutations.
+
+Rejected: *failing the job on a half-set config.* Tempting, and wrong — every one of these
+combinations is legitimate somewhere. A GPU host with no existing weights genuinely should
+download them, and a big model on CPU is a reasonable thing to try once. Turning a slow
+configuration into a failed deploy on the Sunday of a hackathon is worse than a loud line
+in a log. Rejected also: *deriving the variables from each other* so only one has to be
+set. They are independent on purpose — the whole reason D25 works is that
+`deploy.resources.reservations.devices` was replaced with a scalar an environment variable
+can turn, and coupling the three back together rebuilds the thing D24 got stuck on.
+
+*Cost:* the warnings are pattern matches on model names (`*27b*`, `*70b*`, `*qwen3.8*`), so
+a big model named something else slips through unwarned, and the list needs editing when
+the model changes. A banner is also only as useful as the person reading the deploy log.
+
+**Separately, and the reason the deploy failed at all:** `runtime: nvidia` requires a named
+runtime registered in the daemon, which this VM did not have. `docker run --gpus all`
+works there because `--gpus` uses device requests, a different code path — so the toolkit
+being installed never implied the runtime was registered. Fixed on the host with
+`nvidia-ctk runtime configure --runtime=docker` and a daemon restart, not in the repo. D25's
+verification note already said to check this; it is recorded here because the check came
+back negative and the fix lives on the machine, where the repo cannot show it.
