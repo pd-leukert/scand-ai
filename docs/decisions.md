@@ -1385,3 +1385,44 @@ is ever added on the inference side (D40's own *Cost* note already flagged the b
 move as relevant to that), this ordering is the one to revisit — it optimizes for the
 single-question case at the expense of the repeated-question-same-corpus case, and D2 never
 measured either against real latency numbers.
+---
+
+## D42 — 2026-09-19 — Accepted
+**Deletion is one function over the statements file: resolve one person, replace every spelling in every text field, return a receipt. Refines D3 and D19.**
+
+`statement_extraction/src/app/deletion.py` takes the statements and a name and returns the redacted
+statements and a receipt. It reads nothing else and keeps nothing: the deleted name is not written
+anywhere, and the file keeps only the placeholder. The person is resolved from the statements alone
+(D19): the actor and `agreed_by` names, plus "First Last" pairs in the text whose first name belongs
+to a known actor, which is how a mentioned-only person such as Nadia Öberg turns up. Spellings that
+differ only by accents are one person (`Henrik Sørensen` and `Henrik Sorensen`). An exact full name
+wins outright; a bare first name picks the person with the most statements. A speaker the file only
+labels (`Guest 1`, `Them`) is never a person.
+
+What is replaced, in this order: the full name (either order), an email of the form
+`first.last@`, `f.last@` or `last.first@`, then the last name and the first name on their own, but
+only when nobody else in the file shares that name. Otherwise the bare name is left, and the
+receipt says who shares it. Every string field is swept except ids, dates, `position`,
+`speech_act`, `handling` and `doc_type`, so a field added later is covered by default. The
+placeholder is `[former RELEX employee]`, `[former customer employee]` or
+`[former partner employee]` from the organisation the file states for that person, and
+`[former participant]` when it states none. Role and organisation stay, as D3 accepts.
+
+Rejected:
+- *The hard-coded cast in `statement_extraction/pipeline/registry.py`.* It has no Nadia Öberg, so a
+  bare "Nadia" would look safe to redact, and it is a second list of names to keep in step with
+  the archive.
+- *Always redacting a bare first name.* Deleting Nadia Haddad would take the one mention of Nadia
+  Öberg with it.
+- *Never redacting a bare first name.* "Kwame" stays in 13 places after Kwame Boateng asked to go.
+- *Sweeping only `actor`, `agreed_by`, `verbatim_span` and `claim`.* A field added later would keep
+  the name.
+
+*Cost:* deleting Nadia Haddad leaves "Nadia" on its own in about 23 places, because it could also
+mean Nadia Öberg; the receipt says so, and a reader can still guess. Email forms are patterns, so
+an unusual address survives. Phone numbers are not covered, because nothing in a statement ties a
+number to a person; the receipt says how many statements contain one. A capitalised pair beginning
+with a known first name is taken for a person, which could add a false one and stop a bare first
+name from being redacted; on this archive the only extra person it finds is Nadia Öberg. Nothing
+calls the function yet: the backend mounts the file read-only and extraction is the only writer, so
+how the demo triggers a deletion is still to be decided.
