@@ -1718,3 +1718,298 @@ it is a preference we are overriding. The margin rule is a workaround for Stream
 internals: it is pinned to a `data-testid` and a 1rem assumption, so a Streamlit upgrade can
 silently undo it, and the symptom would again be overlapping text rather than an error. The
 theme file is a fourth place configuration lives (compose, Dockerfile, README, now this).
+
+
+---
+
+## D49 — 2026-09-19 — Accepted
+**Frontend polish pass: header now shares the content column's margins, the hero and
+question titles get `!important` so they actually render in the brand typeface, dark mode
+is pinned off, and the ask button's arrow glyph is optically centered.**
+
+*Written on a branch that did not yet have D42–D48. Two of its findings — dark mode and the
+16px spacing — were reached independently by D48; where they overlap, D48 is what ships.
+The bullets below say so individually.*
+
+Four requested fixes, all CSS-only changes to `frontend/app.py` plus one new
+`.streamlit/config.toml`. Two of them turned out to need more than the fix first asked for,
+and fixing one of them surfaced a fifth bug plus a sanitizer gotcha worth its own note below:
+
+- **Header margin.** `.st-key-header`'s row spanned the full viewport with a fixed 32px
+  padding, while the hero/answer content is a `max-width` column centered with
+  `margin:0 auto`. On any viewport wider than the content column the two edges disagreed —
+  the logo sat near the browser edge while the content started well to its right. Fixed by
+  giving the header row the same `max-width:880px` and `margin:0 auto` as
+  `.st-key-answer_page`, so both start at the same x regardless of viewport width.
+
+- **Hero title wrapping.** The request was "make it wider so it doesn't wrap." Checked
+  first, and it wasn't actually a width problem: `.sc-hero-title` was never rendering as
+  Space Grotesk 32px. Streamlit injects its own `<hash> h1{font-size:2.75rem;
+  font-weight:700}` rule scoped to the container, at the same specificity as `.sc-hero-title`
+  alone (one class, one element each), and it happened to win on source order. The title was
+  silently rendering in Streamlit's default 44px Source Sans Bold — which is why it wrapped;
+  at that size "Ask about your workshop notes" doesn't fit the 576px available.
+  `.sc-question` (the "You asked" heading) had the identical bug.
+  Rejected: widening the hero column until the *wrong* font happened to fit. That "fixes"
+  the wrap while leaving the title in the wrong typeface, silently — a worse outcome than the
+  one reported.
+  Fixed: added `!important` to `.sc-hero-title` and `.sc-question`, the pattern this file
+  already uses to beat Streamlit's own specificity (see the `stVerticalBlock` gap comment in
+  `STYLE`). With the intended 32px Space Grotesk actually applied it fits on one line with
+  room to spare (519px natural width in 576px available). `.st-key-hero` was still widened,
+  640px → 720px, per the literal ask — headroom for longer questions, not the fix itself.
+
+- **Dark mode.** *Superseded by D48, which reached the same conclusion independently and
+  went further — keep D48's version, not this one.* No `prefers-color-scheme` rule exists
+  anywhere in `STYLE`; Streamlit was auto-following the OS/browser theme for its own native
+  widgets regardless, visible as a dark ask-input box sitting in an otherwise light page.
+  Rejected: chasing every native widget with a CSS override as dark-mode cases turn up —
+  reactive, and the next native widget added reopens the same bug. Fixed here with
+  `frontend/.streamlit/config.toml` (`[theme]` / `base = "light"`). D48, on the deletion
+  branch, wrote the same file with `base = "light"` *plus* our four palette tokens and
+  `color-scheme:light` on `:root`, which also covers what the browser paints (form controls,
+  scrollbars, autofill). Merging the two branches, this file was resolved to D48's version
+  outright; nothing of this bullet's change survives except the diagnosis.
+
+- **Button arrow.** First attempt, `.st-key-ask_form button p{transform:translateY(-4px)}`,
+  silently did nothing — `transform` does not apply to a plain `display:inline` box per the
+  CSS Transforms spec (only replaced or block/inline-block elements are "transformable"),
+  and `<p>` is inline by default. Added `display:inline-block` alongside the transform so it
+  actually takes effect. Verified by cropping a screenshot to just the button and measuring
+  the glyph's ink pixels against the circle's center: 4.4px below center before the fix,
+  ~1px above after.
+
+- **Subtitle centering.** Caught after the fact ("the title is shifted to the left"):
+  `.sc-hero-sub` has the same specificity collision as the heading bug above, on the `<p>`
+  tag instead of `<h1>` — a Streamlit-generated rule resets `margin-left`/`margin-right` to
+  `0`, which silently cancelled the `margin:12px auto 0` centering trick and left the
+  subtitle pinned to the box's left edge instead of centered under the title. Same fix:
+  `!important`.
+
+**A second, unrelated bug turned up while writing that last fix, worth recording on its
+own:** the first attempt at the subtitle fix's explanatory comment wrote `` on the `<p>` tag
+this time `` — a literal `<p>` inside a CSS `/* */` comment, inside the string passed to
+`st.html()`. Streamlit's `st.html()` sanitizer does not treat `<style>` contents as opaque
+raw text the way a browser parsing real HTML would; it appears to scan the whole `body`
+string for tag-like patterns, found the `<p>` sitting inside the comment, and silently
+dropped the *entire* `STYLE` block as a result — no exception, no visible error, just a
+completely unstyled page. Confirmed with a minimal isolated `st.html()` repro and by
+bisecting the change hunk by hand: the comment alone was fine, the two added `!important`s
+alone were fine, only the combination (comment containing a literal tag, in a string that
+also changed) reproduced it. Fixed by rewording the comment to describe the element without
+angle brackets. **Practical rule for anyone editing `STYLE` in this file: never write a
+literal `<tag>` inside a CSS comment, even in prose — spell it out instead ("a paragraph
+tag") or the whole style payload can vanish with no error to point at.**
+
+*Cost:* the `!important` list on heading/paragraph rules grows by three; a fourth custom
+rule added later without checking whether it collides with a Streamlit-generated rule the
+same way will silently lose again — nothing catches this automatically, it was found by
+diffing computed styles in a browser, not by inspection, and would be easy to miss next
+time. `theme.base="light"` forecloses ever offering a real dark theme later without a
+deliberate `[theme.dark]` build-out, which nobody has asked for. And the sanitizer gotcha
+above has no test guarding it — a future edit can reintroduce it, and the only symptom is a
+blank, unstyled page with nothing in the browser console or Streamlit's log to point at
+`STYLE`.
+
+---
+
+## D50 — 2026-09-19 — Accepted *(extends D49)*
+**One `--content-width` column for the header, the ask state and the answer state — the
+hero widens from 720px to 880px to join it — and a loading indicator holds the answer card
+from submit until the backend's first token.**
+
+Second pass on the same frontend, from the same direction: "the header is not aligned with
+the search bar", "the strange grey background in the input", "the logo has no bottom
+margin", "just make it look polished".
+
+- **One column.** The header was 880px (D49) and the hero 720px, so the brand sat 80px left
+  of the ask bar — D49 fixed the header against the *answer* column and left the ask state
+  out of step. Now `--content-width:880px` and `--gutter:32px` are tokens on `:root` and all
+  three consumers read them, so the brand, the ask bar and every answer line start at the
+  same x. Rejected: aligning the header to the hero's 720px instead, which just moves the
+  disagreement to the answer page; and hard-coding 880 in three places again, which is how
+  the two drifted apart in the first place. The cost is that the hero is no longer the
+  narrow centred box the mockup had — the ask bar is now 816px wide. Taken deliberately:
+  alignment across the two states reads as more finished than a narrower empty state.
+
+- **Three Streamlit defaults were quietly eating the spacing.** All the same shape as D49's
+  specificity bug — Streamlit styling our own markup — and all found by measuring, not
+  reading: (1) every markdown container carries `margin-bottom:-16px` to cancel a trailing
+  markdown paragraph's margin, but every container here holds our own HTML with explicit
+  margins, so it just ate 16px — that is why the logo had no room under it and why the
+  hero's 32px gap rendered as 16px. **This is the same bug D48 found from the other end, and
+  D48's fix is the one that ships.** Both cancel the same −16px: this branch removed the
+  container's negative margin, D48 gives the last child back the 1rem the negative margin
+  assumes. Net spacing is identical, so the merge kept D48's rule and dropped this one —
+  keeping both would have stacked them into a real +16px everywhere. D48 also has the better
+  claim: it was isolated by bisecting a minimal app one property at a time, it is written
+  down, and it fixes the deletion dialog's overlapping button, which this branch never saw;
+  (2) the generated heading rule also carries
+  `padding:1.25rem 0 1rem`, which D49's margin overrides never touched, so both headings
+  sat in 36px of padding that was not in the design; (3) the grey field is painted by
+  Streamlit's `stTextInputRootElement` wrapper, not the `input` we were overriding, so the
+  override left a grey box inside the white pill. Header padding is now 20px, which makes
+  the header exactly the 73px the hero's `min-height: calc(100vh - 73px)` had always
+  assumed. Streamlit's own "Press Enter to submit form" hint inside the pill is hidden too —
+  the `.sc-hint` line under the bar already says it.
+
+- **Loading indicator.** The answer card was empty between submit and the first token,
+  which on a slow local model reads as broken. Three pulsing dots plus "Reading the record…"
+  are written into the same `st.empty()` the streamed answer uses, so the first token
+  overwrites them — no flag, no second placeholder, no "is it done yet" state to keep in
+  sync. Its `min-height` matches `.sc-answer-text`'s line-height so the card does not jump
+  when the text arrives. Rejected: `st.spinner`, which renders Streamlit's own chrome in the
+  middle of a card we style by hand; and clearing the placeholder on a `first_chunk` flag,
+  which is a branch that exists only to do what overwriting already does.
+
+Verified against a throwaway SSE server speaking the backend's wire format with a 6s delay
+before its first token (the real backend needs Ollama): the indicator is present during the
+wait and gone on the first token, and the loading, streaming and answered states were each
+screenshotted.
+
+*Cost:* the hero's ask bar is wide, and if anyone wants the narrow empty state back, that is
+a second column token and the alignment argument above has to be re-made. The three
+Streamlit-default overrides are pinned to selectors (`stTextInputRootElement`,
+`InputInstructions`, the markdown container's margin) that are Streamlit internals, not a
+public API — a Streamlit upgrade can rename any of them and the symptom would be cosmetic
+and silent, exactly like the bugs they fix. And "Reading the record…" is copy nobody has
+reviewed; it is accurate about what the backend does (D2: the whole statements file, no
+retrieval), but it is the first user-facing sentence we have written that is not in the
+mockup.
+
+---
+
+## D51 — 2026-09-20 — Accepted *(amends D48's margin rule; records the D42–D48 / D49–D50 merge)*
+**D48's `margin-bottom:1rem` rule now stops at button labels, the header height is a token
+rather than a number two rules had to agree on, and the hero calls the archive a
+communication history rather than workshop notes.**
+
+The deletion branch (D42–D48) and the layout branch (D49–D50) both changed
+`frontend/app.py` without seeing each other. Merging them was not a matter of taking a side
+— two of the fixes were the same bug approached from opposite ends:
+
+- *The same 16px, twice.* D48 gives a markdown container's last child back the 1rem the
+  container's negative margin assumes; D49–D50 removed the negative margin instead. Either
+  alone nets zero. **Both** applied nets a real +16px on every block, which is what the
+  automatic merge produced. Kept D48's, dropped the other — D48 is written down, was
+  isolated by bisection, and fixes the deletion dialog's overlapping button.
+- *`.streamlit/config.toml`* existed on both sides. Took D48's: same `base = "light"`, plus
+  the palette tokens and `color-scheme:light`.
+
+Then two things broke that neither branch could have seen alone, both found by measuring the
+merged page rather than reading the diff:
+
+- **D48's rule reaches inside buttons.** A button's label is a markdown container's last
+  child, so it got the 1rem too. On an inline label a vertical margin does nothing, so it
+  was invisible — but D50 had made the send arrow's label `inline-block` (it has to be, or
+  its centring transform is ignored), and there the margin applied and put the glyph 12px
+  above centre. `button [data-testid="stMarkdownContainer"] > *:last-child` now sets it back
+  to 0. Scoped to buttons on purpose: the dialog's warning paragraph, which is what D48 was
+  fixing, keeps its margin and still clears its button by 14px.
+  Rejected: *dropping the arrow's `inline-block`/transform and accepting the glyph sitting
+  low.* It is the only reason the arrow looks centred at all — the "↑" glyph reserves space
+  below itself for descenders it does not have.
+- **The header height was a number in two places.** The hero filled the viewport with
+  `calc(100vh - 73px)`, a literal that was only ever right while the header held nothing
+  taller than the 32px logo. D46/D47's always-visible "Delete a person" button is 40px, so
+  the real header became 81px and the hero overhung it. It is `--header-height` now, read by
+  both. Applied as `min-height`, because Streamlit sizes these boxes itself and ignores a
+  `height` declaration — the same wall D48 hit forcing `height:auto`.
+
+- **The heading anchor was never ours to keep.** Streamlit puts a link icon inside every
+  heading, painted only on hover but occupying its 16px in the line at all times — so the
+  centred hero title was sitting 12px left of centre, at rest and on hover. It joins the
+  rule that already hides Streamlit's menu, footer and decoration. Nothing in this app links
+  to a heading anchor, so there is no capability being given up.
+
+Also, copy: the hero said "Ask about your workshop notes". The archive is two years of
+transcripts, email threads and status reports ([corpus.md](corpus.md)), so it now says
+"Ask about your communication history" — still one line at the width D50 set.
+
+*Cost:* D48's rule now has an exception, so it is two rules to keep in mind rather than one,
+and the exception is pinned to the same Streamlit `data-testid` D48's own *Cost* note flags
+as upgrade-fragile. The lesson worth keeping is narrower than either rule: a global rule
+matched on a Streamlit `data-testid` will land on Streamlit's own widgets as well as on our
+components, and whether that is visible depends on something as small as a label's `display`.
+
+---
+
+## D52 — 2026-09-20 — Accepted
+**Two pieces of motion: an ambient baby-blue wash behind the page, and a fade on the newest
+streamed fragment so the answer arrives instead of snapping in. Both honour
+`prefers-reduced-motion`.**
+
+Asked for directly. Both are decoration, so the bar is that they cost nothing structural and
+can be turned off.
+
+- **The wash.** Three radial blobs of the accent at 7–11% alpha, drifting and swelling over
+  26s. It is painted as `.stApp`'s own `background-image`, not an overlay element: there is
+  no stacking context to manage, nothing to intercept clicks, and `background-attachment:
+  fixed` keeps it still while a long answer scrolls. The colour is `--accent` at low alpha
+  rather than a new blue, so it cannot drift out of the palette; alpha is the dial, and
+  above roughly 0.14 it stops reading as paper. This also meant changing the page's
+  `background` shorthand to `background-color` — the shorthand resets `background-image`,
+  which is the wash.
+
+- **The streamed fade.** Only the newest chunk is wrapped and animated; the text already on
+  screen carries no animation, so it repaints unchanged and only the leading edge moves.
+  Three things had to be true, none of them guessable from reading the code:
+  1. *The animation has to be able to restart.* Streamlit reuses the span between reruns,
+     and an animation only re-runs when its `animation-name` changes — so the class
+     alternates between two names for one effect. Verified by sampling computed opacity
+     through a stream: without this it fires once.
+  2. *Duration is set by the chunk cadence, not by taste.* A fragment is promoted to settled
+     text on the very next frame, so a fade slower than the gap between chunks gets cut off
+     part-way and snaps to full — a pop, the opposite of the point. The first attempt at
+     0.4s was measured mid-animation on every single sample (opacity never above 0.14).
+     0.16s starting at 25% lit leaves a step small enough to read as a soft edge.
+  3. *No transform.* It does nothing on an inline box, and `inline-block` would break
+     mid-sentence line wrapping — the same inline/inline-block distinction behind D51's
+     button-label bug.
+  A citation marker split across the head/tail boundary would not match the badge pattern,
+  so a frame whose split lands inside brackets renders whole and unanimated instead of
+  flashing a literal `[1]`.
+
+*Cost:* motion on a page that did not have any, and the wash is one more thing between the
+judges and plain white — if it reads as noise on a projector, the alpha tokens are the
+single place to turn it down, or to zero. The fade's timing is tuned against `DUMMY_LLM`'s
+pacing (D15); a real model streams slower, where each fragment simply completes its fade,
+which is the better-looking case. And the two `@keyframes` blocks are deliberate
+duplicates — one effect, two names — which looks like something to DRY up and must not be.
+
+---
+
+## D53 — 2026-09-20 — Accepted
+**The hero's subtitle is replaced by what the record holds — 23 transcripts, 20 emails,
+2 reports — and those counts are hardcoded in the frontend rather than fetched.**
+
+Asked for, and the shape is right: the old subtitle described the product ("scandAI answers
+from your meeting notes…"), which a judge can infer from the title and the placeholder. The
+counts say something they cannot infer and would otherwise have to take on trust — how much
+record is behind the answer.
+
+Hardcoded, which deserves the argument because this is a factual claim on the first screen
+a judge reads, in a project whose whole thesis is that claims are checkable:
+
+- The archive is fixed for the weekend — baked into the extraction image at build time
+  (D18), not mounted — so the numbers cannot drift under a running deployment.
+- `statement_extraction/tests/test_documents.py` already asserts
+  `{"transcript": 23, "email": 20, "report": 2}` against `input/`. A corpus that changes
+  fails a test rather than quietly leaving a false line on screen. That test is the guard;
+  the frontend comment points at it.
+
+Rejected: *deriving them from the statements file over a new backend endpoint.* More
+correct in principle, and it would describe the artifact actually answered from rather than
+the archive — if extraction dropped a document the two would disagree. Rejected for now
+because it is a network call on first paint for a caption, with a fallback to design for
+when the backend is not up, and because CLAUDE.md asks the frontend to hold no logic. If
+the two ever can disagree — a corpus that is not baked in, or partial extraction — this
+becomes the wrong call and the endpoint is the fix.
+
+Icons are inline SVG at text size, `currentColor`, stroke-only. Checked first that
+Streamlit's sanitizer keeps SVG in `st.markdown` (it does, paths intact) rather than
+assuming it.
+
+*Cost:* three numbers now live in two places, `input/` and `frontend/app.py`, joined only by
+a test in a third. Nothing fails loudly in the frontend if they part company — the test goes
+red, and whoever sees it has to know to come here.

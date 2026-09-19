@@ -31,15 +31,55 @@ STYLE = """
   --border:#e4e8ec; --border-strong:#d3d9e0; --accent:#1668a5; --accent-hover:#0f5488;
   --accent-soft:#e4eef7; --navy:#0b3049; --chip-bg:#f1f3f5;
   --danger:#8a2c2c; --danger-hover:#6f2323;
+  /* One column the header, the ask state and the answer state all share, so the brand,
+     the ask bar and every answer line start at the same x. Change it in one place. */
+  --content-width:880px; --gutter:32px;
+  /* The header is a fixed height rather than whatever its tallest control happens to be,
+     because the hero subtracts it to fill the viewport. Before this, adding the always-on
+     "Delete a person" button grew the header to 81px while the hero still subtracted a
+     hard-coded 73px. */
+  --header-height:72px;
+  /* The ambient wash, as the accent at very low alpha rather than a new blue, so it stays
+     in the palette. Alpha is the dial: above ~0.14 it stops reading as paper. */
+  --wash:rgba(22,104,165,0.07); --wash-strong:rgba(22,104,165,0.11);
   /* Light only, on purpose: .streamlit/config.toml pins Streamlit's own widgets to the same
      tokens, and this pins what the browser paints for us — form controls, scrollbars,
      autofill — so a dark-mode laptop cannot turn half the page dark (D48). */
   color-scheme:light;
 }
-html, body, .stApp{background:var(--bg) !important;color:var(--text);
+/* background-color, not the background shorthand: the shorthand also resets
+   background-image, which is what the wash below paints. */
+html, body, .stApp{background-color:var(--bg) !important;color:var(--text);
   font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;}
+/* Ambient wash: three very faint baby-blue blobs that drift and swell over the page. It
+   lives in .stApp's own background rather than an overlay element, so it paints behind
+   every component with no stacking context to manage and nothing to intercept clicks.
+   Fixed attachment keeps it still while a long answer scrolls past it. */
+.stApp{
+  background-image:
+    radial-gradient(closest-side, var(--wash-strong), transparent),
+    radial-gradient(closest-side, var(--wash), transparent),
+    radial-gradient(closest-side, var(--wash), transparent) !important;
+  background-repeat:no-repeat !important;
+  background-attachment:fixed !important;
+  animation:sc-breathe 26s ease-in-out infinite;}
+@keyframes sc-breathe{
+  0%, 100%{background-size:58% 62%, 46% 50%, 62% 56%;
+    background-position:16% 10%, 86% 22%, 62% 92%;}
+  50%{background-size:66% 70%, 53% 57%, 69% 63%;
+    background-position:22% 17%, 79% 15%, 55% 85%;}
+}
+/* Motion this slow is still motion; honour the system setting and keep the wash static. */
+@media (prefers-reduced-motion: reduce){
+  .stApp{animation:none !important;background-size:58% 62%, 46% 50%, 62% 56%;
+    background-position:16% 10%, 86% 22%, 62% 92%;}
+}
+/* stHeaderActionElements is the anchor-link icon Streamlit adds inside every heading. It is
+   only painted on hover, but it sits in the line the whole time, so it was pushing the
+   centred hero title 12px to the left of centre. */
 #MainMenu, header[data-testid="stHeader"], footer,
-[data-testid="stDecoration"], [data-testid="collapsedControl"]{display:none !important;}
+[data-testid="stDecoration"], [data-testid="collapsedControl"],
+[data-testid="stHeaderActionElements"]{display:none !important;}
 .block-container{padding:0 !important;max-width:100% !important;}
 /* Streamlit's own vertical-block gap beats a plain class selector on specificity;
    !important on every section override below is what actually wins. */
@@ -51,11 +91,21 @@ div[data-testid="stVerticalBlock"]{gap:0;}
    Giving the last child the margin back costs no visible space and fixes all of them (D48). */
 [data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:1rem !important;}
 button p{margin:0;}
+/* D48's rule above targets every markdown container's last child, which includes the label
+   inside a button. On an inline label that margin does nothing, so it went unnoticed — but
+   the send arrow's label is inline-block (it has to be, for its transform), so there the
+   margin applies and pushed the glyph half of it off centre. Button labels are not the
+   mis-measured blocks D48 is about. */
+button [data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:0 !important;}
 
 /* header bar */
 .st-key-header{background:var(--surface);border-bottom:1px solid var(--border);}
 .st-key-header [data-testid="stHorizontalBlock"]{align-items:center !important;
-  padding:16px 32px !important;justify-content:space-between !important;}
+  /* min-height, not height: Streamlit sizes these boxes itself and a height declaration
+     here is simply ignored (the same wall D48 hit forcing height:auto). */
+  min-height:var(--header-height) !important;
+  max-width:var(--content-width) !important;width:100% !important;margin:0 auto !important;
+  padding:0 var(--gutter) !important;justify-content:space-between !important;}
 .st-key-header [data-testid="stHorizontalBlock"] > div{
   flex:0 0 auto !important;width:auto !important;}
 .sc-brand{display:flex;align-items:center;gap:10px;}
@@ -76,37 +126,67 @@ button p{margin:0;}
 .st-key-header button:hover p{color:var(--text) !important;}
 
 /* hero / ask state */
-.st-key-hero{min-height:calc(100vh - 73px);display:flex !important;flex-direction:column !important;
+.st-key-hero{min-height:calc(100vh - var(--header-height) - 1px);
+  display:flex !important;flex-direction:column !important;
   align-items:center !important;justify-content:center !important;gap:32px !important;
-  max-width:640px;margin:0 auto;padding:32px;}
-.sc-hero-title{margin:0;text-align:center;font-family:'Space Grotesk',sans-serif;
-  font-size:32px;line-height:40px;font-weight:600;color:var(--text);}
-.sc-hero-sub{margin:12px auto 0;text-align:center;max-width:520px;
-  font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:22px;color:var(--text-muted);}
+  max-width:var(--content-width);margin:0 auto;padding:32px var(--gutter);}
+/* Streamlit's own generated heading rule (element+class) ties this class selector's
+   specificity, and wins on source order — !important is what actually wins here, same
+   as the vertical-block gap override above. */
+.sc-hero-title{margin:0 !important;padding:0 !important;text-align:center !important;
+  font-family:'Space Grotesk',sans-serif !important;font-size:32px !important;
+  line-height:40px !important;font-weight:600 !important;color:var(--text) !important;}
+/* What the record holds, under the title. Deliberately quiet: faint colour, 13px, and
+   icons at text size, so it reads as a caption rather than a second headline. */
+.sc-corpus{display:flex !important;align-items:center;justify-content:center;
+  flex-wrap:wrap;gap:4px 10px;margin:14px 0 0 !important;
+  font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:20px;
+  color:var(--text-faint);}
+.sc-corpus-item{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+.sc-corpus-item svg{width:14px;height:14px;flex-shrink:0;}
+.sc-corpus-sep{color:var(--border-strong);}
 
 .st-key-ask_form{width:100%;background:var(--surface);border:1px solid var(--border-strong);
   border-radius:24px;box-shadow:0 1px 2px rgba(9,20,31,0.08);padding:6px 6px 6px 20px;}
 .st-key-ask_form [data-testid="stForm"]{border:none !important;padding:0 !important;}
 .st-key-ask_form [data-testid="stHorizontalBlock"]{align-items:center !important;
   gap:8px !important;}
+/* Streamlit's own "Press Enter to submit form" hint appears inside the pill on focus,
+   saying the same thing as the .sc-hint line already under it. */
+.st-key-ask_form [data-testid="InputInstructions"]{display:none !important;}
+/* The grey field is painted by Streamlit's wrapper, not the input — overriding only the
+   input leaves a grey box sitting inside the white pill. Clearing the wrapper (in every
+   state, including focus) lets the pill itself be the only visible surface. */
+.st-key-ask_form [data-testid="stTextInputRootElement"],
+.st-key-ask_form [data-testid="stTextInputRootElement"]:focus-within{
+  background:transparent !important;border:none !important;box-shadow:none !important;}
 .st-key-ask_form input{border:none !important;background:transparent !important;
   box-shadow:none !important;font-family:'IBM Plex Sans',sans-serif;font-size:17px;
   color:var(--text) !important;padding:8px 0 !important;}
 .st-key-ask_form button{width:44px;height:44px;border-radius:999px !important;
   border:none !important;background:var(--navy) !important;padding:0 !important;}
 .st-key-ask_form button:hover{background:var(--accent-hover) !important;}
-.st-key-ask_form button p{color:#fff !important;font-size:18px !important;line-height:1;}
+.st-key-ask_form button p{color:#fff !important;font-size:18px !important;line-height:1;
+  /* "↑" sits low in its own em box (the glyph reserves space for descenders it doesn't
+     have) — nudge it up so it looks centered in the round button. transform is a no-op
+     on a plain inline box, so this also needs inline-block to take effect. */
+  display:inline-block;transform:translateY(-4px);}
 .sc-hint{margin-top:8px;text-align:center;font-family:'IBM Plex Sans',sans-serif;
   font-size:13px;color:var(--text-faint);}
 
 /* answer state */
-.st-key-answer_page{max-width:880px;margin:0 auto;padding:32px 32px 64px;
+.st-key-answer_page{max-width:var(--content-width);margin:0 auto;padding:32px var(--gutter) 64px;
   display:flex !important;flex-direction:column !important;gap:24px !important;}
 .st-key-sources_list{display:flex !important;flex-direction:column !important;gap:10px !important;}
 .sc-asked-label{font-family:'IBM Plex Sans',sans-serif;font-size:13px;font-weight:600;
   letter-spacing:0.01em;color:var(--text-muted);}
-.sc-question{margin:4px 0 0;font-family:'Space Grotesk',sans-serif;font-size:20px;
-  line-height:28px;font-weight:600;color:var(--text);}
+/* Same generated heading rule again: it also carries padding:1.25rem 0 1rem, which the
+   margin overrides above never touched, so both headings were sitting in 36px of Streamlit
+   padding on top of their own spacing. Zero it and let the margins here be the rhythm. */
+.sc-question{margin:4px 0 0 !important;padding:0 !important;
+  font-family:'Space Grotesk',sans-serif !important;
+  font-size:20px !important;line-height:28px !important;font-weight:600 !important;
+  color:var(--text) !important;}
 
 .sc-card, .st-key-live_card{background:var(--surface);border:1px solid var(--border);
   border-radius:16px;padding:24px;box-shadow:0 1px 2px rgba(9,20,31,0.08);}
@@ -120,6 +200,32 @@ button p{margin:0;}
   color:var(--text-muted);}
 .sc-answer-text{margin:0;font-family:'IBM Plex Sans',sans-serif;font-size:17px;
   line-height:27px;color:var(--text);}
+/* The newest streamed fragment fades up out of a slight blur, so text arrives rather than
+   snapping in. Two names for one animation because Streamlit reuses the span between
+   reruns, and an animation only restarts when its name changes. No transform: it does
+   nothing on an inline box, and inline-block would break mid-sentence line wrapping. */
+/* Duration is tuned to the gap between chunks, not to taste: a fragment is promoted to
+   settled text on the next frame, so a fade slower than that gap gets cut off part-way and
+   snaps to full — a pop, which is the opposite of the point. Starting part-lit keeps what
+   is left of that step small. */
+.sc-stream-in-0{animation:sc-stream-a 0.16s ease-out;}
+.sc-stream-in-1{animation:sc-stream-b 0.16s ease-out;}
+@keyframes sc-stream-a{from{opacity:0.25;filter:blur(2px);}to{opacity:1;filter:blur(0);}}
+@keyframes sc-stream-b{from{opacity:0.25;filter:blur(2px);}to{opacity:1;filter:blur(0);}}
+@media (prefers-reduced-motion: reduce){
+  .sc-stream-in-0, .sc-stream-in-1{animation:none !important;}
+}
+/* Shown while we wait for the backend's first token. min-height matches .sc-answer-text's
+   line-height so the card does not jump when the answer replaces this. */
+.sc-loading{display:flex;align-items:center;gap:10px;min-height:27px;}
+.sc-dots{display:flex;align-items:center;gap:5px;}
+.sc-dots span{width:7px;height:7px;border-radius:50%;background:var(--accent);opacity:0.25;
+  animation:sc-dot 1.2s ease-in-out infinite;}
+.sc-dots span:nth-child(2){animation-delay:0.16s;}
+.sc-dots span:nth-child(3){animation-delay:0.32s;}
+.sc-loading-label{font-family:'IBM Plex Sans',sans-serif;font-size:14px;
+  color:var(--text-muted);}
+@keyframes sc-dot{0%,70%,100%{opacity:0.25;}35%{opacity:1;}}
 .sc-badge-inline{display:inline-flex;align-items:center;justify-content:center;min-width:17px;
   height:17px;padding:0 4px;margin:0 1px;border-radius:6px;background:var(--accent-soft);
   color:var(--accent);font-family:'IBM Plex Sans',sans-serif;font-size:12px;font-weight:500;
@@ -128,7 +234,12 @@ button p{margin:0;}
   margin-top:12px;}
 
 /* delete-a-person dialog */
-.st-key-header_actions [data-testid="stHorizontalBlock"]{padding:0 !important;gap:8px !important;}
+/* This row is nested inside the header, so the header rule above (a descendant selector)
+   also lands on it — undo the column sizing here, or the two buttons get spread to the
+   full content width instead of sitting together. */
+.st-key-header_actions [data-testid="stHorizontalBlock"]{padding:0 !important;gap:8px !important;
+  max-width:none !important;width:auto !important;margin:0 !important;
+  justify-content:flex-end !important;}
 [data-testid="stDialog"] [data-testid="stVerticalBlock"]{gap:14px !important;}
 [data-testid="stDialog"] section{background:var(--surface) !important;border-radius:16px;}
 [data-testid="stDialog"] h2{font-family:'Space Grotesk',sans-serif !important;font-size:20px;
@@ -182,6 +293,45 @@ button p{margin:0;}
 </style>
 """.replace("__FONTS_HREF__", FONTS_HREF)
 
+_ICON = (
+    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"'
+    ' stroke-linecap="round" stroke-linejoin="round">{}</svg>'
+)
+# The counts are the archive's, and the archive is fixed for the weekend because it is baked
+# into the extraction image (D18). statement_extraction/tests/test_documents.py asserts these
+# same three numbers against input/, so a corpus that changes fails a test rather than
+# quietly leaving a false claim on the first screen a judge reads.
+CORPUS_ITEMS = (
+    (
+        '<path d="M13.5 7.7c0 2.5-2.5 4.6-5.5 4.6-.8 0-1.6-.1-2.3-.4L2.5 13l1.1-2.4'
+        'c-.7-.8-1.1-1.8-1.1-2.9 0-2.5 2.5-4.6 5.5-4.6s5.5 2.1 5.5 4.6Z"/>',
+        "23 transcripts",
+    ),
+    (
+        '<rect x="2" y="3.5" width="12" height="9" rx="1.5"/>'
+        '<path d="m2.6 4.8 5.4 3.9 5.4-3.9"/>',
+        "20 emails",
+    ),
+    (
+        '<path d="M9 2H4.8c-.7 0-1.3.6-1.3 1.3v9.4c0 .7.6 1.3 1.3 1.3h6.4c.7 0 1.3-.6'
+        ' 1.3-1.3V5.5L9 2Z"/><path d="M9 2v3.5h3.5"/><path d="M6 9h4M6 11.2h2.8"/>',
+        "2 reports",
+    ),
+)
+CORPUS_HTML = '<div class="sc-corpus">{}</div>'.format(
+    '<span class="sc-corpus-sep">⋅</span>'.join(
+        f'<span class="sc-corpus-item">{_ICON.format(paths)}{label}</span>'
+        for paths, label in CORPUS_ITEMS
+    )
+)
+
+LOADING_HTML = (
+    '<div class="sc-loading" role="status" aria-live="polite">'
+    '<div class="sc-dots"><span></span><span></span><span></span></div>'
+    '<span class="sc-loading-label">Reading the record…</span>'
+    "</div>"
+)
+
 BRAND_HTML = (
     '<div class="sc-brand">'
     '<div class="sc-logo"><span>s</span></div>'
@@ -210,6 +360,24 @@ def render_answer_html(answer: str) -> str:
         r"\[(\d+)\]",
         lambda m: f'<span class="sc-badge-inline">{m.group(1)}</span>',
         escaped,
+    )
+
+
+def render_streaming_html(answer: str, tail: str, frame: int) -> str:
+    """The answer so far, with only the newest chunk wrapped so it fades in.
+
+    Wrapping just the tail is what keeps this from flickering: the text already on screen
+    carries no animation and so repaints unchanged, and only the arriving fragment moves.
+    The class alternates because Streamlit reuses the element between reruns — a changing
+    animation-name is what makes the browser run it again."""
+    head = answer[: len(answer) - len(tail)]
+    # A citation marker split across the boundary would not match the badge pattern, so
+    # render the frame whole rather than flash a literal "[1]" mid-stream.
+    if "[" in tail or "]" in tail or head.count("[") != head.count("]"):
+        return f'<p class="sc-answer-text">{render_answer_html(answer)}</p>'
+    return (
+        f'<p class="sc-answer-text">{render_answer_html(head)}'
+        f'<span class="sc-stream-in-{frame % 2}">{render_answer_html(tail)}</span></p>'
     )
 
 
@@ -449,9 +617,8 @@ if not st.session_state.question:
     with hero_placeholder.container():
         with st.container(key="hero"):
             st.markdown(
-                '<h1 class="sc-hero-title">Ask about your workshop notes</h1>'
-                '<p class="sc-hero-sub">scandAI answers from your meeting notes, status reports '
-                "and email threads. Every claim traces back to its source.</p>",
+                '<h1 class="sc-hero-title">Ask about your communication history</h1>'
+                + CORPUS_HTML,
                 unsafe_allow_html=True,
             )
             with st.container(key="ask_form"):
@@ -484,12 +651,15 @@ if not st.session_state.question:
                     unsafe_allow_html=True,
                 )
                 answer_placeholder = st.empty()
+                # Held until the backend's first token, which overwrites the placeholder.
+                # A local model can be slow to start, and an empty card reads as broken.
+                answer_placeholder.markdown(LOADING_HTML, unsafe_allow_html=True)
                 result: dict = {}
                 answer = ""
-                for chunk in stream_backend(question, result):
+                for frame, chunk in enumerate(stream_backend(question, result)):
                     answer += chunk
                     answer_placeholder.markdown(
-                        f'<p class="sc-answer-text">{render_answer_html(answer)}</p>',
+                        render_streaming_html(answer, chunk, frame),
                         unsafe_allow_html=True,
                     )
         st.session_state.question = question
