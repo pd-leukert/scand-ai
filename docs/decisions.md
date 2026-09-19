@@ -732,3 +732,88 @@ being installed never implied the runtime was registered. Fixed on the host with
 `nvidia-ctk runtime configure --runtime=docker` and a daemon restart, not in the repo. D25's
 verification note already said to check this; it is recorded here because the check came
 back negative and the fix lives on the machine, where the repo cannot show it.
+
+---
+
+## D27 — 2026-09-19 — Accepted
+**`statement-extraction`'s container now actually runs `pipeline.run`, not the placeholder
+FastAPI stub. Four latent bugs fixed along the way; the segment-to-`Statement` mapping is
+still not done.**
+
+The Dockerfile's `CMD` still served `src/app/main.py` — the health-check stub the
+README already called a placeholder, timed to exit after 60 seconds — while the real
+parser/annotator (`pipeline/`) sat unwired. Fixing that surfaced four more bugs nothing had
+caught because the job had never actually run in a container:
+
+1. **D18 was never implemented.** It says `COPY input/ …` goes in the extraction
+   Dockerfile; the line was never added, so the container had no corpus to read. Added.
+2. `pipeline/run.py`'s `REPO_ROOT` was `parent.parent` (one level too few — lands on
+   `statement_extraction/`, not the repo root), and `DEFAULT_SAMPLE_FILES` pointed at
+   `acme/...`, a directory that was renamed to `input/` and no longer exists anywhere in
+   this repo. Both fixed; `REPO_ROOT` is now `parent.parent.parent`.
+3. Compose has passed `EXTRACTION_LLM_BASE_URL`/`EXTRACTION_LLM_MODEL` since D23, and the
+   README documented them, but `run.py` read `OPENAI_BASE_URL`/`QWEN_MODEL` instead —
+   the README's own "nothing reads them yet" was still true. `run.py` now reads the
+   documented names.
+4. The OpenAI SDK refuses to construct a client with no `api_key` at all, even against
+   Ollama's OpenAI-compatible endpoint, which ignores the value. Nothing had set one.
+   Defaulted to a dummy value (`"ollama"`), overridable via `EXTRACTION_LLM_API_KEY` if a
+   real key is ever needed.
+
+With no `--files`, `pipeline.run` now defaults to every file under `input/transcripts/`
+and `input/emails/` (sorted, for a stable run order) instead of the two hardcoded sample
+files. `input/reports/` is excluded — `parse_file()` still raises `NotImplementedError`
+for it — so 2 of the 3 document types are actually extracted; the third still needs its
+parser written.
+
+Also removed: `fastapi`/`uvicorn` from `statement_extraction/pyproject.toml` and the
+`[tool.fastapi]` entrypoint, and deleted `statement_extraction/src/`. Nothing in this
+package serves HTTP anymore — it is a job, per D12 — so there is nothing for them to do.
+
+Rejected: *also converting the pipeline's per-document segment output into the
+`Statement`/`StatementsFile` shape `backend/src/app/statements.py` validates* (id,
+document_id, location, verbatim_span, actor, agreed_by, speech_act, statement_date,
+document_date — see D20). That mapping is its own decision — the extraction
+`speech_act` vocabulary has more values than the backend's, and `agreed_by` has to be
+derived, not copied — and doing it inline here risked guessing an answer someone else
+was already mid-way through. Left for a follow-up entry.
+
+*Cost:* `docker compose up` now genuinely runs extraction over 45 (well, 44 without
+reports) real documents against the local model instead of a 60-second no-op — first real
+signal on how long/expensive that pass actually is, and the first chance to hit whatever
+the real corpus does to the parsers. But the job still writes per-document JSON files (plus
+`_topic_vocabulary.json`) to the shared volume, not a single `statements.json` — so the
+backend still has nothing to point `STATEMENTS_FILE_PATH` at yet and keeps serving the
+mock file. This wiring makes extraction *real*; it does not yet make it *consumed*.
+
+---
+
+## D28 — 2026-09-19 — Accepted
+**`pipeline.run` skips extraction entirely if `--out-dir` already has extracted documents
+in it, rather than re-running on every `docker compose up`.**
+
+D12 already calls `statement-extraction` a job that "runs once" — but nothing enforced
+that once D27 made it a real, expensive LLM pass instead of a 60-second no-op. The
+`statements` volume in `compose.yaml` is a named volume: it survives the container being
+recreated (a redeploy, a `docker compose up` with no `-v`), so without this check every
+redeploy would re-run 43 documents' worth of model calls against `/data`, which already has
+last time's output sitting in it.
+
+`main()` now checks `--out-dir` for any `*.json` other than `_topic_vocabulary.json`
+before doing anything else; if it finds one, it prints why and returns — the container
+still exits 0, so compose's `service_completed_successfully` gate on `backend`/`frontend`
+is unaffected. `--force` bypasses the check for an intentional re-run (a corpus edit, a
+prompt change worth re-annotating for).
+
+Rejected: *a content hash of the corpus, re-running only when it changes.* More correct —
+this "any file present" check can't tell a stale run from a current one after a document
+is edited — but it's real complexity for a corpus D18 already says is fixed for the
+weekend. `--force` covers the one case (a deliberate corpus/prompt change) that matters
+before Sunday. Rejected also: *deleting `/data` before every run instead of skipping.*
+Defeats the entire point — the volume exists so a redeploy doesn't have to re-pay for
+extraction.
+
+*Cost:* a partial run (crashed halfway through the document list) looks identical to a
+complete one to this check — any leftover `.json` file blocks the rest from ever being
+extracted without `--force`. Acceptable for now since the job either finishes cleanly or
+the deploy log shows the crash and someone reruns it by hand.

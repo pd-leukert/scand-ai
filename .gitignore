@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# pipeline.run's default local --out-dir
+/pipeline_output/

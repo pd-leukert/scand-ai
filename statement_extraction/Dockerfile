@@ -17,12 +17,12 @@ RUN uv sync --locked --package statement-extraction --no-install-workspace
 
 COPY statement_extraction/ statement_extraction/
 
-# Where this job writes the statements file. It is the only writer.
-ENV STATEMENTS_PATH=/data/statements.json
+# The corpus, baked into the image per docs/decisions.md D18 — .dockerignore does not
+# exclude it, so this is the one line D18 calls for.
+COPY input/ input/
 
 WORKDIR /app/statement_extraction
-EXPOSE 8000
 
-# The command from statement_extraction/README.md, minus dev reload. This container is a
-# job: it is expected to exit 0, and compose holds the other two until it does.
-CMD ["uv", "run", "--frozen", "fastapi", "run"]
+# This container is a job: pipeline.run exits 0 once every document is parsed and
+# annotated, and compose holds backend/frontend until it does. See docs/decisions.md D12.
+CMD ["uv", "run", "--frozen", "python", "-m", "pipeline.run", "--out-dir", "/data"]
