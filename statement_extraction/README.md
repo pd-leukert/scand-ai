@@ -1,9 +1,32 @@
 # Statement extraction
 
-Offline job that turns the source documents into the statements file. It runs once, walks
-`input/` one document at a time, asks the model for that document's statements, and writes
-the result. It is a script, not a server: it exits 0 on success, non-zero if anything went
-wrong, and compose holds the backend and frontend until it has (D12).
+Offline job that turns the source documents into two files, in two passes. It runs once.
+
+1. **Extraction.** Walks `input/` one document at a time, asks the model for that document's
+   statements, and writes the statements file.
+2. **Reconciliation** (D31). Strictly after the first pass has finished. Stage A tags every
+   statement with a topic, in batches, showing each batch the topics already in use so the
+   vocabulary converges. Stage B makes one call per topic, and the model writes the relations
+   it can see between that topic's statements: `supersedes`, `corrects`, `conflicts-with`,
+   `answers`. Code then derives each statement's status — `current`, `stale`, `never-true`,
+   `disputed` or `unresolved` — from the relations that survive validation, never from dates,
+   and writes the reconciled file: the statements nested inside their topics, with the
+   relations, a one-sentence summary per topic, and a list of problems.
+
+The model is shown statements under local labels (`S1`, `S2`, …), never their ids, and
+anything it returns that does not name a real statement is dropped and counted. Nothing in
+`reconcile.py` writes a new quote.
+
+It is a script, not a server: it exits 0 on success, non-zero if anything went wrong, and
+compose holds the backend and frontend until it has (D12). **A failure in either pass is a
+failed run.** If reconciliation fails, or a hard gate trips, nothing is written for that
+pass and any earlier reconciled file is left alone. Exit codes: 0 done, 1 a failed run
+(including a document that yielded no statements, which stops the job before reconciliation),
+2 not configured.
+
+At the end of a run it prints what was dropped, one line per topic, every problem it found,
+and the size of both files with a token estimate for the answering context. That last line is
+D2's ceiling, measured.
 
 Before changing it, read [docs/corpus.md](../docs/corpus.md) — what the 45 documents
 actually look like, and the traps planted in them — and
@@ -31,6 +54,25 @@ frontend wait on it in turn.
   to 300; raise it on a machine with a bigger context budget.
 - `EXTRACTION_NUM_CTX` — the context window passed to Ollama. Defaults to 8192.
 - `EXTRACTION_TIMEOUT` — per-request timeout in seconds. Defaults to 600.
+- `RECONCILED_FILE_PATH` — where the reconciled file is written, `/data/reconciled.json` in
+  compose, next to the statements file. The backend reads it under the same variable name.
+- `RECONCILE_LLM_MODEL` — the model for the second pass. Defaults to `EXTRACTION_LLM_MODEL`,
+  which compose defaults to `LLM_MODEL`. Reconciliation is a reasoning pass over short
+  contexts, not a copying task, so it may want a different one. `ollama-pull` pulls it too.
+- `RECONCILE_NUM_CTX` (8192), `RECONCILE_TIMEOUT` (600) — as their `EXTRACTION_` twins.
+- `RECONCILE_BATCH_STATEMENTS` — statements per topic-tagging call. Defaults to 20.
+- `RECONCILE_VOCABULARY_SHOWN` — how many of the most-used topics each tagging batch is
+  shown. Defaults to 40.
+- `RECONCILE_TOPIC_MAX` — statements in one reconciliation call. A larger topic is cut into
+  near-equal consecutive chunks, and a link across the cut is not seen. Defaults to 40.
+- `RECONCILE_MAX_UNTAGGED` — the share of statements that may come back untagged before the
+  run fails. Defaults to 0.1.
+- `RECONCILE_MAX_TOPICS` — topics per statement above which the run fails. Defaults to 0.35.
+  These two gates exist for the failure that looks like success: a grouping so fragmented
+  that no topic holds two statements, so no link is found and the whole record comes out
+  `current` with exit 0. **The thresholds are guesses until the first run on the real
+  corpus**, and a run over one or two documents can trip the topic gate legitimately — set
+  `RECONCILE_MAX_TOPICS=1` for a smoke run.
 
 These are deliberately separate from the backend's `LLM_BASE_URL`/`LLM_MODEL`: extraction
 and answering are allowed to use different models, and the working agreement says never to

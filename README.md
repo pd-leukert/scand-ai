@@ -24,7 +24,7 @@ record says, not the polite version.
 |---|---|---|
 | 1 | **Cite everything** — document, and where in it | In scope for the MVP. Every claim carries document, location, and the verbatim span it came from. No citation means we treat it as a guess. |
 | 2 | **Suggestion ≠ commitment** | In scope. Extraction records what kind of speech act a statement is, who made it, and for whom they spoke. |
-| 3 | **Know stale from wrong** | Out of scope for the MVP; a second-pass LLM layer that groups and evaluates statements is the agreed successor. See [D4](docs/decisions.md) and [D16](docs/decisions.md). |
+| 3 | **Know stale from wrong** | In scope. A second LLM pass groups the statements by topic, writes explicit supersedes / corrects / contradicts links between them, and derives a status for each from those links — never from dates. See [D31](docs/decisions.md), which supersedes D4 and D16. |
 | 4 | **Delete a person** | In scope, with a deliberate and documented interpretation. See [D3](docs/decisions.md) and [D19](docs/decisions.md). |
 | 5 | **Do one thing unasked** | Not yet chosen — [Q1](docs/open-questions.md). Candidates and evidence in [roadmap](docs/roadmap.md). |
 | — | **Residency** — the archive stays in the EU | In scope and structural: Verda, local Ollama, no external model APIs. See [architecture](docs/architecture.md#residency). |
@@ -41,9 +41,15 @@ Three long-running containers and one job that runs once.
 2. **Statement extraction (job).** Walks the documents one at a time, puts each through a
    local LLM, and pulls out every statement it contains — who said it, when, what kind of
    claim it was, and exactly where in the document it appears. The results from all
-   documents are aggregated into a single statements file. This runs once, offline.
-3. **Backend.** A Python/FastAPI service that takes a user question, puts the statements
-   file in the model's context, and answers from it — with citations.
+   documents are aggregated into a single statements file. Then a second pass over those
+   statements groups them by topic, writes down which supersede, correct, contradict or
+   answer which, and derives a status for each (current, stale, never-true, disputed,
+   unresolved) from those links alone. That is written to a second file, the reconciled
+   file. This all runs once, offline, and both files stay on the shared volume.
+3. **Backend.** A Python/FastAPI service that takes a user question, puts the reconciled
+   file in the model's context, and answers from it — with citations that carry each
+   statement's status and the statements that justify it. `ANSWER_SOURCE=statements`
+   switches it to the flat statements file, with no currency information at all.
 4. **Frontend.** A Streamlit app the judges open in a browser and use themselves.
 
 Full picture, including what each boundary is for: [docs/architecture.md](docs/architecture.md).
@@ -116,9 +122,9 @@ Ollama runs as a fourth container on the same VM, on the GPU only when
 `OLLAMA_RUNTIME=nvidia` is set. A one-shot `ollama-pull` job downloads the model into the
 model store (a named volume on a laptop, the `OLLAMA_DATA_DIR` bind on the VM) before
 extraction or the backend start, so the first question can never hit a missing model; a
-re-pull of a model that is already there is a no-op, so only the first run is slow. Both models are configuration —
-`LLM_MODEL` for answering, `EXTRACTION_LLM_MODEL` for extraction, the latter defaulting to
-the former. See [decision D23](docs/decisions.md) for the Ollama service and
+re-pull of a model that is already there is a no-op, so only the first run is slow. All three models are configuration —
+`LLM_MODEL` for answering, `EXTRACTION_LLM_MODEL` for extraction and `RECONCILE_LLM_MODEL`
+for the reconciliation pass, each defaulting to the one before it (D31). See [decision D23](docs/decisions.md) for the Ollama service and
 [D25](docs/decisions.md) for the laptop/VM switch.
 
 ## Status

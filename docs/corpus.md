@@ -24,7 +24,7 @@ in the file formats, and it is cheaper to read about it than to discover it at 2
 | Span | 2024-03-20 (first sales demo) → 2026-07-02 (internal renewal planning) |
 
 ~363k characters is roughly 90k tokens by the usual rule of thumb — **unmeasured, and the
-number that matters is the size of the statements file, not the corpus.** But it is the
+number that matters is the size of the derived file that goes into the model's context, not the corpus.** But it is the
 reason the brief says the archive fits in a long context window, and it is the evidence
 behind D2 (no retrieval).
 

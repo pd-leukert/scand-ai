@@ -16,7 +16,8 @@ minutes of questions.**
 
 **The one page has four named questions, and answering exactly those four is the job:**
 how provenance is stored ([data-model.md](data-model.md)), how we catch stale facts
-(we do not — [D4](decisions.md), and say so), how deletion propagates
+(a second pass writes explicit links between statements and derives the status from them,
+never from dates — [D31](decisions.md); say that it is a floor, not a guarantee), how deletion propagates
 ([D3](decisions.md), [D19](decisions.md)), and where inference runs
 ([architecture.md](architecture.md#residency)). It is a summary of documents we already
 have; do not write it from scratch on Sunday morning.
@@ -30,8 +31,9 @@ point of deciding it today rather than at 11:00 on Sunday.
 - The Streamlit URL is reachable from outside our network, on a device that is not ours.
 - It works for someone who has never seen it: the input is obvious and the first answer
   arrives without anyone explaining anything.
-- Extraction has been run, the statements file is in place, and the backend has been
-  restarted against it.
+- Extraction has been run, both the statements file and the reconciled file are in place
+  (the job's last lines say how big the reconciled file is — that is D2's answer), and the
+  backend has been restarted against it.
 - Someone who did not build it has asked it three questions end to end.
 - The deployment is in an EU region and we can name the region out loud ([Q3](open-questions.md)).
 
@@ -68,9 +70,10 @@ judges believe the other four.
   document costs more than the claim was worth.
 - **"The record does not say" is a correct answer** when the record does not say it. It is
   better than a plausible reconstruction, and this corpus is built to reward it.
-- **When evidence conflicts, say so and cite both sides.** We have no currency signal, so
-  we do not pick a winner. Presenting a conflict as a conflict is the honest move and it
-  is the one our architecture supports.
+- **When evidence conflicts, say so and cite both sides.** A `disputed` pair is one the
+  record does not settle, so we do not pick a winner. A `stale` or `never-true` statement
+  is reported as what the record once said, next to the statement that replaced or
+  corrected it — never as fact, and never left out.
 - **Never soften what the record says about RELEX.** The archive is unflattering about the
   vendor on purpose and the judges are the vendor. Reporting it straight is the demo.
 - **Do not claim more than we do.** The deletion slice grades "filtered and called

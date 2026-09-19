@@ -2,10 +2,16 @@
 
 Live web service for processing user requests. Gathers the `Statement DB` and exposes a RESTful API to the frontend.
 
-It reads the statements file and **nothing else** — not the source documents, not
-extraction, not the model's own knowledge. If the statements do not support an answer, the
-answer is that the record is silent. See [CLAUDE.md](../CLAUDE.md) rule 2 and
-[docs/architecture.md](../docs/architecture.md).
+It reads one derived file and **nothing else** — not the source documents, not extraction,
+not the model's own knowledge. By default that is the reconciled file: the statements grouped
+by topic, with the relations between them and a status on each (stale, never-true, disputed,
+unresolved, or current), worked out by the extraction job's second pass ([D31](../docs/decisions.md)).
+If the statements do not support an answer, the answer is that the record is silent. See
+[CLAUDE.md](../CLAUDE.md) rule 2 and [docs/architecture.md](../docs/architecture.md).
+
+Each citation carries the statement's `status` and `status_receipts`, the ids of the
+statements that put it there. Both are copied from our own loaded file, never from the
+model's output — the model reads a currency, it does not assert one.
 
 Run with `uv run fastapi dev` from the `backend` folder.
 
@@ -22,10 +28,23 @@ Run with `uv run fastapi dev` from the `backend` folder.
 Optional:
 
 - `LLM_API_KEY` — sent as `Authorization: Bearer ...` if set. Ollama doesn't need one.
-- `STATEMENTS_FILE_PATH` — defaults to the mock file at `src/app/data/mock_statements.json`.
-  Points at the real derived statements file once extraction produces one.
+- `ANSWER_SOURCE` — which derived file to answer from: `reconciled` (the default) or
+  `statements`. Read at startup, so changing it means restarting the backend. In `statements`
+  mode the backend behaves as it did before D31: the model gets the flat list under the
+  original prompt, which says currency is unknowable, and every citation has `status: null`
+  and no receipts. It never sends `current` for statements nobody reconciled. In compose,
+  `ANSWER_SOURCE=statements docker compose up` switches it; both files are on the volume.
+- `RECONCILED_FILE_PATH` — the reconciled file. Defaults to the mock at
+  `src/app/data/mock_reconciled.json` (the mock statements wrapped in two topics, one
+  relation, one problem — its statuses are written by hand, not derived). Points at the real
+  file once extraction produces one; compose sets it to `/data/reconciled.json`.
+- `STATEMENTS_FILE_PATH` — the flat statements file, read only when `ANSWER_SOURCE=statements`.
+  Defaults to the mock at `src/app/data/mock_statements.json`; compose sets it to
+  `/data/statements.json`. This name has to match what extraction writes, or the backend
+  silently falls back to the bundled mock.
 - `DUMMY_LLM` — set to `true` to skip the model call entirely and answer from a canned
-  response built out of the loaded statements file (real citations, no model). Also lifts
+  response built out of the loaded record (real citations, no model, and the new `status`
+  and `status_receipts` fields on the wire). Also lifts
   the `LLM_BASE_URL`/`LLM_MODEL` requirement. For exercising `/query` end to end — both
   `stream: false` and the SSE `stream: true` path — without Ollama running. See
   [decisions.md](../docs/decisions.md) D15.

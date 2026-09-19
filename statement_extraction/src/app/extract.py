@@ -1,4 +1,5 @@
-"""Run the extraction job: read the corpus, ask the model, write the statements file.
+"""Run the extraction job: read the corpus, ask the model, write the statements file, then
+reconcile the statements by topic and write the reconciled file (D31).
 
 EXTRACTION_LLM_MODEL=<model> uv run python -m src.app.extract [DOC_ID_SUBSTRING ...]
 """
@@ -6,13 +7,15 @@ EXTRACTION_LLM_MODEL=<model> uv run python -m src.app.extract [DOC_ID_SUBSTRING 
 import json
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 import httpx
 
 from .documents import load_corpus
 from .extraction import SCHEMA, Chat, extract_document, link_agreements
-from .output import to_statement
+from .output import to_reconciled, to_statement
+from .reconcile import ReconcileError, reconcile
 
 
 def _ollama_chat(client: httpx.Client, model: str, num_ctx: int) -> Chat:
@@ -53,6 +56,16 @@ def main(filters: list[str]) -> int:
     timeout = float(os.environ.get("EXTRACTION_TIMEOUT", "600"))
     corpus = Path(os.environ.get("CORPUS_DIR", Path(__file__).parents[3] / "input"))
     out = Path(os.environ.get("STATEMENTS_FILE_PATH", "statements.json"))
+    # Reconciliation is a second pass with its own model, defaulting to the first pass's (D31).
+    reconcile_model = os.environ.get("RECONCILE_LLM_MODEL") or model
+    reconcile_num_ctx = int(os.environ.get("RECONCILE_NUM_CTX", "8192"))
+    reconcile_batch = int(os.environ.get("RECONCILE_BATCH_STATEMENTS", "20"))
+    reconcile_timeout = float(os.environ.get("RECONCILE_TIMEOUT", "600"))
+    topic_cap = int(os.environ.get("RECONCILE_TOPIC_MAX", "40"))
+    vocabulary_shown = int(os.environ.get("RECONCILE_VOCABULARY_SHOWN", "40"))
+    max_untagged = float(os.environ.get("RECONCILE_MAX_UNTAGGED", "0.1"))
+    max_topics = float(os.environ.get("RECONCILE_MAX_TOPICS", "0.35"))
+    reconciled_out = Path(os.environ.get("RECONCILED_FILE_PATH", "reconciled.json"))
 
     docs = load_corpus(corpus)
     total = len(docs)
@@ -97,7 +110,60 @@ def main(filters: list[str]) -> int:
         # A document with no statements is a silent gap in the record, so the job fails.
         print(f"No statements from: {', '.join(empty)}", file=sys.stderr)
         return 1
+
+    # Only a complete record is reconciled, and a failure here is a failed run: compose then
+    # holds the backend rather than let it answer from a half-reconciled record, and any
+    # earlier reconciled file is left alone.
+    try:
+        with httpx.Client(base_url=host, timeout=reconcile_timeout) as client:
+            chat = _ollama_chat(client, reconcile_model, reconcile_num_ctx)
+            topics, problems, discarded = reconcile(
+                records,
+                chat,
+                batch=reconcile_batch,
+                vocabulary_shown=vocabulary_shown,
+                topic_cap=topic_cap,
+                max_untagged=max_untagged,
+                max_topics=max_topics,
+                progress=lambda line: print(line, flush=True),
+            )
+    except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError, ReconcileError) as error:
+        print(
+            f"Reconciliation failed, so {reconciled_out} was not written: {error!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    tmp = reconciled_out.with_name(reconciled_out.name + ".tmp")
+    reconciled = to_reconciled(topics, problems, date.today().isoformat())
+    tmp.write_text(json.dumps(reconciled, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, reconciled_out)
+    print(f"Dropped in reconciliation: {dict(discarded)}" if discarded else "Nothing dropped.")
+    print(
+        f"Wrote {reconciled['statement_count']} statements in {reconciled['topic_count']} topics, "
+        f"{reconciled['relation_count']} relations and {reconciled['problem_count']} problems "
+        f"to {reconciled_out}"
+    )
+    for problem in problems:
+        print(f"  [{problem['kind']}] {problem['topic']}: {', '.join(problem['statements'])}")
+        print(f"    {problem['note']}")
+    print(_size_report(out, reconciled_out))
     return 0
+
+
+def _size_report(statements_path: Path, reconciled_path: Path) -> str:
+    """D2's ceiling is unmeasured until something measures it. The whole reconciled file goes
+    into the answering context, base64-encoded (D21), so report what that actually costs.
+
+    Rough on purpose: four characters a token, and the file's bytes include indentation and
+    fields the backend never sends. It is the order of magnitude that decides whether D2 holds."""
+    before, after = statements_path.stat().st_size, reconciled_path.stat().st_size
+    tokens = after * 4 // 3 // 4
+    return (
+        f"{statements_path.name} {before // 1000} kB, {reconciled_path.name} {after // 1000} kB "
+        f"({(after - before) / before:+.0%}), about {tokens // 1000}k tokens once base64-encoded "
+        "into the answering context."
+    )
 
 
 if __name__ == "__main__":

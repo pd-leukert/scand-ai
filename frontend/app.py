@@ -138,9 +138,14 @@ button p{margin:0;}
   border-radius:999px;background:var(--chip-bg);border:1px solid var(--border);
   color:var(--text-muted);font-family:'IBM Plex Sans',sans-serif;font-size:12px;
   font-weight:500;line-height:16px;}
+/* status pills: a pill is a warning, so a statement the record does not flag gets none */
+.sc-pill-stale{background:#fdf3e1;border-color:#e8cf9f;color:#8a5a12;}
+.sc-pill-never-true{background:#fdf1f1;border-color:#e8b4b4;color:#8a2c2c;}
+.sc-pill-disputed{background:#f3eefb;border-color:#d3c4ec;color:#5b3a94;}
+.sc-pill-unresolved{background:var(--accent-soft);border-color:#c3d8ea;color:var(--accent);}
 .sc-quote{background:var(--chip-bg);border-radius:8px;padding:12px 14px;
   font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:20px;color:var(--text);}
-.sc-agreed{display:block;font-family:'IBM Plex Sans',sans-serif;font-size:12px;
+.sc-agreed, .sc-receipt{display:block;font-family:'IBM Plex Sans',sans-serif;font-size:12px;
   line-height:16px;color:var(--text-muted);}
 
 [class*="st-key-toggle_"] button{background:transparent !important;border:none !important;
@@ -178,6 +183,24 @@ def location_label(location: dict) -> str:
     # M" for an email thread or report — the actual "position in the conversation".
     position = location.get("position")
     return f"{label} · {position}" if position else label
+
+
+# status -> (pill label, css class). "current" has no entry on purpose: a pill is a warning, and
+# everything the record does not flag is current. The status and the ids behind it are worked out
+# by the backend (D31); this only shows them.
+STATUS_PILLS = {
+    "stale": ("Superseded", "sc-pill-stale"),
+    "never-true": ("Never true", "sc-pill-never-true"),
+    "disputed": ("Disputed", "sc-pill-disputed"),
+    "unresolved": ("Never answered", "sc-pill-unresolved"),
+}
+
+
+def status_pill(status: str) -> str:
+    if status not in STATUS_PILLS:
+        return ""
+    label, css_class = STATUS_PILLS[status]
+    return f'<span class="sc-pill {css_class}">{label}</span>'
 
 
 def date_label(iso_date: str) -> str:
@@ -268,6 +291,7 @@ def render_source_row(citation: dict) -> None:
     doc_date = date_label(str(citation.get("document_date", "")))
     where = location_label(location)
     speech_act = html.escape(str(citation.get("speech_act", "")).capitalize())
+    status_html = status_pill(citation.get("status", "current"))
 
     with st.container(key=container_key):
         st.markdown(
@@ -278,7 +302,7 @@ def render_source_row(citation: dict) -> None:
                 <span class="sc-source-name">{name} · {role}, {org}</span>
                 <span class="sc-source-doc">{doc} — {doc_date} · {where}</span>
               </div>
-              <span class="sc-pill">{speech_act}</span>
+              <span class="sc-pill">{speech_act}</span>{status_html}
             </div>
             """,
             unsafe_allow_html=True,
@@ -298,10 +322,16 @@ def render_source_row(citation: dict) -> None:
                 agreed_html = f'<span class="sc-agreed">Agreed by {names}</span>'
             else:
                 agreed_html = '<span class="sc-agreed">No agreement appears in the record.</span>'
+            receipts = citation.get("status_receipts") or []
+            receipt_html = ""
+            if receipts:
+                ids = ", ".join(html.escape(receipt) for receipt in receipts)
+                receipt_html = f'<span class="sc-receipt">Because of {ids}</span>'
             st.markdown(
                 f"""
                 <div class="sc-quote">“{html.escape(citation.get("verbatim_span", ""))}”</div>
                 {agreed_html}
+                {receipt_html}
                 """,
                 unsafe_allow_html=True,
             )

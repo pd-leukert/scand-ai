@@ -31,7 +31,7 @@ This is the direct cause of D4.
 
 ---
 
-## D2 — 2026-09-18 — Accepted
+## D2 — 2026-09-18 — Accepted *(what goes into context is now reconciled.json — D31)*
 **The whole statements file goes into the answering model's context. No retrieval.**
 
 Rejected: retrieval or embedding-based selection of relevant statements. Rejected for the
@@ -47,7 +47,7 @@ retrieval with embeddings only if that is not enough.
 
 ---
 
-## D3 — 2026-09-18 — Accepted
+## D3 — 2026-09-18 — Accepted *(its "no second derived artifact" condition no longer holds — see D31)*
 **Deletion redacts a person to a role-class placeholder in the statements file.**
 
 A deleted person's name is replaced with `[former RELEX employee]` or
@@ -78,7 +78,7 @@ re-run of the pipeline — this decision has to be revisited, because the name c
 
 ---
 
-## D4 — 2026-09-18 — Accepted
+## D4 — 2026-09-18 — Superseded by D31
 **Currency is out of scope for the MVP.**
 
 We do not classify statements as stale or never-true, and we do not link statements that
@@ -343,7 +343,7 @@ file each time, which is the boring version and fine at this size.
 
 ---
 
-## D16 — 2026-09-19 — Accepted
+## D16 — 2026-09-19 — Superseded by D31
 **Currency stays out of today's MVP. The agreed successor is a second-pass LLM layer that
 groups statements and evaluates them — not a date heuristic, and not nothing.**
 
@@ -867,3 +867,138 @@ separate trigger mechanism) on top of `extract.py`'s `main(filters)`, which alre
 document-id substrings for exactly this, just not over HTTP. Until then, re-running
 extraction means `docker compose up --build statement-extraction` or the local command in
 statement_extraction/README.md.
+
+---
+
+## D31 — 2026-09-19 — Accepted *(supersedes D4 and D16)*
+**Currency is in the MVP. A second LLM pass groups the statements by topic, writes explicit
+relations between them, and derives a status for each statement from those relations alone.
+It writes a second derived artifact, `reconciled.json`, and the answering path reads that by
+default. `statements.json` stays on the shared volume, and a backend setting can switch back to it.**
+
+D16 named this pass as D4's successor and set its condition: the answering path and the
+extraction job have to work. They now do (D21/D27, D28/D30). The currency slice is 20% of the
+rubric and we score zero on it, and three of the nine practice questions are currency
+questions — P9 cannot be answered at all without the stale/never-true distinction.
+
+The pass runs inside the `statement-extraction` job, strictly after the first pass has
+finished and written `statements.json`. Stage A tags every statement with a topic, in
+batches, showing each batch the topics already in use so the vocabulary converges instead of
+forking. Stage B makes one call per topic: the model reads that topic's statements, oldest
+first, and writes the relations it can see — `supersedes`, `corrects`, `conflicts-with`,
+`answers` — plus a one-sentence summary and any problems a reader would get wrong. The model
+is shown statements under local labels (S1, S2, …) and code maps them back to ids, so an id is
+never something it has to copy, and every relation, receipt and problem that does not name a
+statement the first pass produced is dropped and counted. That is D21's trust boundary,
+applied to the second pass.
+
+**A status is derived from links, by code; the model's opinion of it is discarded.** Five
+statuses, in precedence order: `never-true` (some statement `corrects` it), `stale` (some
+statement `supersedes` it), `disputed` (`conflicts-with`, either direction), `unresolved` (a
+proposal or question that nothing `answers` and nobody accepted), and `current` — the default,
+and the only status that needs no relation. `never-true` beats `stale` on purpose: reporting a
+record that was never true as merely old is one of the three failures the brief names. The
+model proposes a status, code re-derives it from the relations that survived validation, and
+where the two differ the code wins and the difference is counted. The status and the ids that
+justify it travel all the way to the citation (`status_receipts`), copied from our own file the
+way D21 copies everything else: the answering model reads a currency, it never asserts one.
+
+**The one date this pass reads.** A `supersedes` relation whose `from` is strictly earlier in
+`stated_on` than its `to` is rejected, because a later statement cannot replace an earlier one.
+That rejects a model error; it creates no status and no link. Same-day relations pass, because
+a transcript carries only its meeting date. It is deliberately **not** applied to `corrects`,
+the relation that produces never-true: a statement can show that a record was never right
+without being dated after it (a transcript's date is its meeting, a thread's is its message),
+and a date test there would put dates back into the one call this design keeps date-free. This
+is not CLAUDE.md rule 5 being bent — it is what rule 5 now says.
+
+Rejected:
+- *A date sort, in any form.* D4's reason stands and the brief says so: it catches stale and
+  reports never-true as merely old. The date guard above is not one — it removes links and
+  never adds any.
+- *Conflict detection only* (D16's reason, weighed again). Saying that two statements disagree
+  without saying which holds is still what the answering prompt does for a `disputed` pair.
+  Rejected as the whole answer because P9 is not a conflict: it is a record that was never
+  right, and that distinction is the slice.
+- *One global reconciliation call over every statement.* It does not fit in a context window,
+  which is why D1 rejected the same shape for extraction.
+- *Pairwise comparison of every statement.* Quadratic, and D1 rejected it for the same
+  reason. Grouping by topic first is what makes comparing affordable.
+- *Writing statuses back into `statements.json`.* A flat list has nowhere to put a link or a
+  summary, and a pass that rewrites its own input destroys the thing it was derived from.
+- *A thin second file that refers to statements by id.* The backend would join two files to
+  answer one question. The reconciled file nests the full statement records instead, each in
+  exactly one topic, with a relation stored once, on its topic.
+
+*Cost, in four parts:*
+
+1. **Two derived artifacts, and deletion is not built yet.** This is exactly the condition D3
+   named: *"no re-extraction after a deletion, and no second derived artifact. Both hold
+   today. If either changes … this decision has to be revisited, because the name comes
+   back."* One has now changed, deliberately, before deletion exists. Deletion must redact both
+   files, and the second is strictly harder: a deleted name can appear in the nested verbatim
+   spans and actor fields, **and in the topic summaries and problem notes, which are
+   model-written prose.** Those summaries are literally what the rubric's deletion band calls
+   "any cached summaries", and prose cannot be redacted by matching a span. Also,
+   `load_record` is `lru_cache`d: deletion has to clear it, or a warm process keeps answering
+   with the name. Both files are live read paths for the answering backend (see the toggle
+   below), so deletion has to cover both whichever is selected. Wherever an earlier entry says
+   "the statements file" about the answering path, read `reconciled.json` unless the toggle
+   says otherwise.
+2. **D2's ceiling moved, and the run now measures it.** What goes into the answering context
+   is the reconciled file: every statement, plus relations, summaries and problems. The job
+   prints both file sizes and a token estimate at the end of every run. That number is D2's
+   answer and belongs in the demo. Every `unresolved` statement also gets a problem entry, which
+   is likely the biggest single source of growth.
+3. **A missed link is a statement reported as `current`.** Untagged statements, a topic cut into
+   chunks, a link across the cut, and a link the model did not see all fail in the same, safe
+   direction — but that makes the signal a floor, not a guarantee, and the honest limit in the
+   roadmap says so. The opposite failure exists for `unresolved`: an `answers` link the model
+   missed leaves an answered proposal flagged as never answered. Untagged statements are the
+   exception, because nothing was compared against them: they are `current`, never
+   `unresolved`.
+4. **A third model-config chain** — `RECONCILE_LLM_MODEL`, then `EXTRACTION_LLM_MODEL`, then
+   `LLM_MODEL` — with D25's half-set-configuration cost applying again: a model named for
+   reconciliation and never pulled would 404 in the middle of the longest job in the stack,
+   which is why `ollama-pull` resolves and pulls it too.
+
+*Conditions this decision depends on:* that deletion is built against both files and both
+kinds of text as one piece of work (CLAUDE.md rule 4). If deletion ships touching only
+`statements.json`, the honest answer is to stop writing the prose rather than claim a deletion
+we do not have. `KEEP_PROSE` in `output.py` is that switch: one line, and it removes the
+summaries and the model-written problem notes together. The plan for this change named the
+summaries only; the notes are the same risk, so they go with them.
+
+Smaller calls made while building it, each with what it beat:
+- **The pass reads each statement's verbatim span, not its `claim`.** The claim is a model's
+  paraphrase, and carrying an extraction error into a currency judgement compounds it. Whether
+  `claim` should enter the answering context is still undecided (D28).
+- **Two hard gates stop the pass**: more than `RECONCILE_MAX_UNTAGGED` (0.1) of statements
+  untagged, or more than `RECONCILE_MAX_TOPICS` (0.35) topics per statement. Both guard the
+  failure that looks like success — a fragmented grouping that finds no links, labels the whole
+  record `current` and exits 0. The thresholds are guesses until the first run on the real
+  corpus, and a single-document smoke run can trip the second one legitimately.
+- **A failure anywhere in the pass exits non-zero and writes nothing**, so compose holds the
+  backend, rather than a partial reconciled file the backend would answer from. An earlier
+  `reconciled.json` is left alone, which means `--no-deps backend` can still serve a stale one.
+- **The backend has a toggle, `ANSWER_SOURCE=reconciled|statements`, defaulting to
+  reconciled.** `statements.json` stays on the volume (extraction still writes it first, and it
+  is the record the second pass is derived from), and the toggle lets the backend answer from
+  it: to compare answers with and without the currency layer, and as a fallback if the second
+  pass misbehaves on the day. Rejected: dropping the statements path when the reconciled file
+  landed, which leaves no way to back out without a redeploy. The toggle is not a flag on the
+  reconciled file; in statements mode the backend behaves as it did before this entry. The
+  model is sent the flat list under the original prompt, which says currency is unknowable,
+  and every citation carries `status: null` and no receipts. Sending `current` for every
+  statement, or the new prompt over a file that was never reconciled, would be a currency
+  signal nobody produced (rule 5). *Cost:* two prompts and two payload shapes to keep
+  honest, and the statements-mode citations show no status pill at all, which is correct and
+  looks like a regression next to the reconciled ones. The value is read at startup, so
+  switching it means restarting the backend.
+- **CLAUDE.md rule 2 now says the answering path reads one derived file — the reconciled file,
+  or with the toggle the statements file — and nothing else.** The rule's point (no source
+  documents, no model memory, no extraction) is unchanged.
+- Topic slugs may contain non-ASCII letters (the archive has Swedish and Danish in it); an
+  oversized topic is cut into near-equal chunks rather than a full chunk and a stub, because a
+  stub links to nothing; and a "quotation" in the model's prose is a double quote or a
+  guillemet, not an apostrophe.

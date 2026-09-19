@@ -3,11 +3,17 @@ QueryResponse whose citations are guaranteed to resolve to real statements.
 
 The model never gets to assert a citation directly. It tags claims with bracketed
 markers and, at the end of its reply, lists the statement ids those markers refer to. The
-backend then looks each id up in its own trusted copy of the statements file and builds
+backend then looks each id up in its own trusted copy of the reconciled file and builds
 the citation from that — never from text the model produced. An id the model invents, or
 mangles while decoding the base64 payload, simply resolves to nothing and is dropped. This
 is what CLAUDE.md means by "if code cannot guarantee [a citation], it must emit no
-citation rather than an approximate one" — see decisions.md D21.
+citation rather than an approximate one" — see decisions.md D21. A statement's status, and
+the ids that justify it, are copied the same way: the model reads a currency, it never
+asserts one (D31).
+
+The record is the reconciled file by default. ANSWER_SOURCE=statements answers from the flat
+statements file instead, exactly as before D31: no status in the context, the prompt that says
+currency is unknowable, and `status: null` on every citation.
 """
 
 from __future__ import annotations
@@ -22,13 +28,68 @@ import httpx
 
 from .config import get_settings
 from .schemas import Citation, QueryResponse
-from .statements import Statement, load_statements
+from .statements import Record, Statement, load_record, load_statements_record
 
 DUMMY_STATEMENT_LIMIT = 5
 
 CITATION_DELIMITER = "===CITATIONS==="
 
 SYSTEM_PROMPT = f"""You are the answering agent for a rollout decision record.
+
+You will be given the complete set of statements extracted from two years of project \
+documents, grouped by topic and base64-encoded as a JSON object under STATEMENTS_B64. \
+Decode it before answering. It has two lists.
+
+topics: every statement is in exactly one topic. A topic has a summary (one sentence, which \
+may be missing), its relations, and its statements. Each statement has an id, the document \
+it came from, a location inside that document, the verbatim text it was extracted from, who \
+said it (with their organisation and role at the time), who — if anyone — agreed to it, what \
+kind of speech act it is (proposal, agreement, decision, report, question, objection), when \
+it was said, and a status. A relation has a from, a to and a kind (supersedes, corrects, \
+conflicts-with or answers), and names two statement ids in the same topic.
+
+problems: places where a reader of the record would go wrong. Each has a kind (reversal, \
+never-true, conflict or unanswered), the topic, the statement ids involved, and a note.
+
+A status is one of current, stale, never-true, disputed or unresolved. It was worked out \
+before you saw the record, from the relations, and it is the only information about currency \
+there is.
+
+Rules, no exceptions:
+1. Answer only from the statements given. Never use outside knowledge. If nothing in the \
+statements answers the question, say so plainly: "The record does not say."
+2. A proposal or suggestion is not a commitment. Only report something as agreed or \
+decided if a statement's speech_act says so, and for agreements, only if someone is \
+listed under agreed_by. If nobody agreed, say that explicitly.
+3. Use each person's organisation and role as recorded on the statement you are citing, \
+not any role they hold elsewhere in the record.
+4. Use the status, and never judge currency yourself. Do not infer which statement is \
+current from dates or from the order statements appear in. A statement that is current may \
+be reported as what the record says. An unresolved statement is a proposal or question \
+nobody answered: say so, and do not report it as agreed.
+5. A stale statement was true when it was said and replaced later. A never-true statement was \
+wrong when it was recorded. Never report either as fact. Report it as what the record once \
+said, say which of the two it is, and name and cite the statements whose relations \
+superseded or corrected it. Do not leave it out: an answer about how something changed cites \
+both the old statement and what replaced it.
+6. If two statements are disputed, report the conflict and cite both. Do not decide which \
+one holds. If two statements seem to disagree and no relation says so, say what each says \
+and do not decide either.
+7. If the question touches a topic that has an entry under problems, say what the problem \
+is and cite the statements it names.
+8. Cite every factual claim. Mark it inline with a bracketed number, e.g. [1], in the \
+order statements are first used, starting at 1. Reuse the same number for repeated use of \
+the same statement. Cite statements, never a summary or a note: those point at statements, \
+they are not evidence.
+9. After the answer, on its own line, write exactly `{CITATION_DELIMITER}` followed by a \
+JSON array of the statement ids the markers refer to, in marker order, e.g. \
+["stmt-004", "stmt-011"]. If you used no markers, write an empty array []. Use only ids \
+that appear in the statements you were given — never invent one.
+"""
+
+# For ANSWER_SOURCE=statements: the prompt as it was before D31. Nothing was reconciled, so the
+# model is told currency is unknowable rather than shown a status that no pass produced.
+STATEMENTS_ONLY_PROMPT = f"""You are the answering agent for a rollout decision record.
 
 You will be given the complete set of statements extracted from a year of project \
 documents, base64-encoded as a JSON array under STATEMENTS_B64. Decode it before \
@@ -57,11 +118,25 @@ that appear in the statements you were given — never invent one.
 """
 
 
-def _build_messages(question: str, statements: dict[str, Statement]) -> list[dict[str, str]]:
-    payload = json.dumps([s.model_dump(mode="json") for s in statements.values()])
+def _build_messages(question: str, record: Record) -> list[dict[str, str]]:
+    if record.reconciled:
+        prompt = SYSTEM_PROMPT
+        payload = json.dumps(
+            {
+                # by_alias: a relation's `from` is a keyword here, and `from` is what the prompt
+                # says.
+                "topics": [t.model_dump(mode="json", by_alias=True) for t in record.topics],
+                "problems": [p.model_dump(mode="json") for p in record.problems],
+            }
+        )
+    else:
+        prompt = STATEMENTS_ONLY_PROMPT
+        # No status: every statement's default is "current", which nobody worked out here.
+        statements = record.statements.values()
+        payload = json.dumps([s.model_dump(mode="json", exclude={"status"}) for s in statements])
     encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": prompt},
         {"role": "user", "content": f"STATEMENTS_B64:\n{encoded}\n\nQUESTION:\n{question}"},
     ]
 
@@ -79,12 +154,10 @@ def _split_response(raw_text: str) -> tuple[str, list[str]]:
     return prose, [str(statement_id) for statement_id in ids]
 
 
-def _resolve_citations(
-    statement_ids: list[str], statements: dict[str, Statement]
-) -> list[Citation]:
+def _resolve_citations(statement_ids: list[str], record: Record) -> list[Citation]:
     citations = []
     for marker, statement_id in enumerate(statement_ids, start=1):
-        statement = statements.get(statement_id)
+        statement = record.statements.get(statement_id)
         if statement is None:
             continue
         citations.append(
@@ -99,9 +172,18 @@ def _resolve_citations(
                 speech_act=statement.speech_act,
                 statement_date=statement.statement_date,
                 document_date=statement.document_date,
+                status=statement.status if record.reconciled else None,
+                status_receipts=record.receipts.get(statement.id, []),
             )
         )
     return citations
+
+
+def _load_record() -> Record:
+    settings = get_settings()
+    if settings.answer_source == "statements":
+        return load_statements_record(settings.statements_file)
+    return load_record(settings.reconciled_file)
 
 
 def _dummy_answer(statements: dict[str, Statement]) -> tuple[str, list[str]]:
@@ -125,23 +207,23 @@ def _dummy_answer(statements: dict[str, Statement]) -> tuple[str, list[str]]:
     return prose, [statement.id for statement in picked]
 
 
-async def _stream_dummy_answer(statements: dict[str, Statement]) -> AsyncIterator[bytes]:
+async def _stream_dummy_answer(record: Record) -> AsyncIterator[bytes]:
     delay_seconds = get_settings().dummy_llm_delay_seconds
-    prose, statement_ids = _dummy_answer(statements)
+    prose, statement_ids = _dummy_answer(record.statements)
     for token in re.findall(r"\S+\s*", prose):
         yield _sse("token", {"text": token})
         if delay_seconds > 0:
             await asyncio.sleep(delay_seconds)
-    citations = _resolve_citations(statement_ids, statements)
+    citations = _resolve_citations(statement_ids, record)
     yield _sse("citations", {"citations": [c.model_dump(mode="json") for c in citations]})
     yield _sse("done", {})
 
 
-def _request_payload(question: str, statements: dict[str, Statement], *, stream: bool) -> dict:
+def _request_payload(question: str, record: Record, *, stream: bool) -> dict:
     settings = get_settings()
     return {
         "model": settings.llm_model,
-        "messages": _build_messages(question, statements),
+        "messages": _build_messages(question, record),
         "stream": stream,
     }
 
@@ -156,11 +238,11 @@ def _headers() -> dict[str, str]:
 
 async def answer_question(question: str) -> QueryResponse:
     settings = get_settings()
-    statements = load_statements(settings.statements_file)
+    record = _load_record()
     if settings.dummy_llm:
-        prose, statement_ids = _dummy_answer(statements)
-        return QueryResponse(answer=prose, citations=_resolve_citations(statement_ids, statements))
-    payload = _request_payload(question, statements, stream=False)
+        prose, statement_ids = _dummy_answer(record.statements)
+        return QueryResponse(answer=prose, citations=_resolve_citations(statement_ids, record))
+    payload = _request_payload(question, record, stream=False)
     url = f"{settings.llm_base_url}/chat/completions"
 
     async with httpx.AsyncClient(timeout=120) as client:
@@ -170,7 +252,7 @@ async def answer_question(question: str) -> QueryResponse:
 
     raw_text = body["choices"][0]["message"]["content"]
     prose, statement_ids = _split_response(raw_text)
-    citations = _resolve_citations(statement_ids, statements)
+    citations = _resolve_citations(statement_ids, record)
     return QueryResponse(answer=prose.strip(), citations=citations)
 
 
@@ -182,12 +264,12 @@ async def stream_answer_question(question: str) -> AsyncIterator[bytes]:
     """Stream the prose answer live; hold citations back until the whole reply is in and
     validated, so nothing unverified reaches the client. See module docstring."""
     settings = get_settings()
-    statements = load_statements(settings.statements_file)
+    record = _load_record()
     if settings.dummy_llm:
-        async for chunk in _stream_dummy_answer(statements):
+        async for chunk in _stream_dummy_answer(record):
             yield chunk
         return
-    payload = _request_payload(question, statements, stream=True)
+    payload = _request_payload(question, record, stream=True)
     url = f"{settings.llm_base_url}/chat/completions"
 
     buffer = ""
@@ -229,6 +311,6 @@ async def stream_answer_question(question: str) -> AsyncIterator[bytes]:
         yield _sse("token", {"text": buffer[flushed:]})
 
     _, statement_ids = _split_response(buffer)
-    citations = _resolve_citations(statement_ids, statements)
+    citations = _resolve_citations(statement_ids, record)
     yield _sse("citations", {"citations": [c.model_dump(mode="json") for c in citations]})
     yield _sse("done", {})

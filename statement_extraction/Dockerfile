@@ -24,6 +24,10 @@ COPY input/ input/
 # backend reads (config.py) — one name for the one artifact, not two that have to agree.
 ENV STATEMENTS_FILE_PATH=/data/statements.json
 
+# The second file, written after the first by the reconciliation pass (D31). The backend reads
+# this one, under the same variable name.
+ENV RECONCILED_FILE_PATH=/data/reconciled.json
+
 WORKDIR /app/statement_extraction
 
 # A job, not a server: run the extraction script and exit. See D28.

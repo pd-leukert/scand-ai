@@ -51,6 +51,7 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - ANSWERING_MODEL=${LLM_MODEL:-qwen3:0.6b}
       - EXTRACTION_MODEL=${EXTRACTION_LLM_MODEL:-${LLM_MODEL:-qwen3:0.6b}}
+      - RECONCILE_MODEL=${RECONCILE_LLM_MODEL:-${EXTRACTION_LLM_MODEL:-${LLM_MODEL:-qwen3:0.6b}}}
       # Reported, not used: the switch's three variables are independent, so a half-set
       # VM runs happily in the wrong shape. Printing the resolved values puts that in the
       # deploy log instead of leaving it to be discovered later. See D26.
@@ -66,6 +67,7 @@ services:
         echo "   model store: $$RESOLVED_STORE"
         echo "   answering : $$ANSWERING_MODEL"
         echo "   extraction: $$EXTRACTION_MODEL"
+        echo "   reconcile : $$RECONCILE_MODEL"
         echo "=============================================================="
         case "$$RESOLVED_RUNTIME:$$RESOLVED_STORE" in
           nvidia:ollama-models*)
@@ -77,11 +79,13 @@ services:
             echo "WARNING: large model on the CPU runtime — set OLLAMA_RUNTIME=nvidia, or"
             echo "WARNING: this will be far too slow to demo." ;;
         esac
-        ollama pull "$$ANSWERING_MODEL" && ollama pull "$$EXTRACTION_MODEL"
+        # Pulled here or it 404s in the middle of the longest job in the stack (D31).
+        ollama pull "$$ANSWERING_MODEL" && ollama pull "$$EXTRACTION_MODEL" && ollama pull "$$RECONCILE_MODEL"
     restart: "no"
 
-  # A job, not a service: it runs once, writes the statements file, and exits 0. Nothing
-  # else starts until it has. See docs/decisions.md D12.
+  # A job, not a service: it runs once, writes the statements file and then the reconciled
+  # file, and exits 0. Nothing else starts until it has, and a failure in either pass is a
+  # failed job. See docs/decisions.md D12 and D31.
   statement-extraction:
     build:
       context: .
@@ -96,6 +100,10 @@ services:
       # they are allowed to differ (CLAUDE.md, "the model is a configuration value").
       - EXTRACTION_LLM_BASE_URL=http://ollama:11434/v1
       - EXTRACTION_LLM_MODEL=${EXTRACTION_LLM_MODEL:-${LLM_MODEL:-qwen3:0.6b}}
+      # Reconciliation is a reasoning pass over short contexts, not a copying task, so it can
+      # want a different model from extraction. It defaults to the extraction model, which
+      # defaults to the answering one (D31).
+      - RECONCILE_LLM_MODEL=${RECONCILE_LLM_MODEL:-${EXTRACTION_LLM_MODEL:-${LLM_MODEL:-qwen3:0.6b}}}
     # Never restart a job that has finished.
     restart: "no"
 
@@ -111,11 +119,17 @@ services:
       ollama-pull:
         condition: service_completed_successfully
     volumes:
-      # Read-only: extraction is the only writer of the derived artifact.
+      # Read-only: extraction is the only writer of the derived artifacts.
       - statements:/data:ro
     environment:
       - LLM_BASE_URL=http://ollama:11434/v1
       - LLM_MODEL=${LLM_MODEL:-qwen3:0.6b}
+      # Which derived file the answering path reads: "reconciled" (the default, with a status
+      # on each statement) or "statements" (the flat list, no currency information). Both are
+      # on the volume. See D31.
+      - ANSWER_SOURCE=${ANSWER_SOURCE:-reconciled}
+      - STATEMENTS_FILE_PATH=/data/statements.json
+      - RECONCILED_FILE_PATH=/data/reconciled.json
     # Deliberately not published — the backend is reachable from the compose network only.
     expose:
       - "8000"
@@ -151,8 +165,9 @@ services:
     restart: unless-stopped
 
 volumes:
-  # The statements file: written once by extraction, read by the backend. One derived
-  # artifact, one place it lives.
+  # The derived artifacts: statements.json and reconciled.json, both written once by the
+  # extraction job and both kept here. The backend reads one of them, chosen by ANSWER_SOURCE
+  # (reconciled by default). Deletion has to redact both (D31).
   statements:
   # Laptop model store. The VM sets OLLAMA_DATA_DIR and binds its own directory instead,
   # leaving this one unused.

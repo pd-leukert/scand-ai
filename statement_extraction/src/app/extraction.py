@@ -169,7 +169,7 @@ def link_agreements(records: list[dict], chat: Chat) -> Counter[str]:
     words. Each link carries the id of that statement, so the agreement has a receipt too.
     """
     counts: Counter[str] = Counter()
-    ordered = sorted(records, key=_when)
+    ordered = sorted(records, key=when)
     for i, record in enumerate(ordered):
         if record["act"] not in ("proposal", "question"):
             continue
@@ -212,7 +212,7 @@ def _who(record: dict) -> str:
     return actor["name"] or actor["label"] or "unknown"
 
 
-def _when(record: dict) -> tuple[int, ...]:
+def when(record: dict) -> tuple[int, ...]:
     """Time order within a document: a thread lists its newest message first."""
     if record["doc_type"] == "transcript":
         return (record["lines"][0],)

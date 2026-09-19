@@ -17,15 +17,18 @@ not before.
             ▼
    ┌──────────────────────────────┐        ┌──────────────┐
    │  statement_extraction (job)  │───────▶│    Ollama    │
-   │  one document at a time      │◀───────│  local LLM   │
-   └────────┬─────────────────────┘        └──────┬───────┘
-            │  writes once                        │
+   │  1. one document at a time   │◀───────│  local LLM   │
+   │  2. reconcile by topic       │        └──────┬───────┘
+   └────────┬─────────────────────┘               │
+            │  writes twice                       │
             ▼                                     │
-   ┌──────────────────┐                           │
-   │  statements file │  the derived artifact      │
-   └────────┬─────────┘                           │
-            │  loaded into context                │
-            ▼                                     │
+   ┌──────────────────┐   ┌──────────────────┐    │
+   │  statements file │──▶│  reconciled file │    │
+   └────────┬─────────┘   └────────┬─────────┘    │
+            └──────────┬───────────┘              │
+                       │  the derived artifacts;  │
+                       │  the backend loads one   │
+                       ▼  into its context        │
    ┌──────────────────┐   REST    ┌───────────────┴──┐
    │   Streamlit UI   │◀─────────▶│  backend (API)   │
    └──────────────────┘           └──────────────────┘
@@ -65,17 +68,28 @@ sits. The per-document results are aggregated into a single statements file.
 Why per-document and not corpus-wide: one document fits in a context window, 45 do not,
 and a single document is a unit we can re-run in isolation when extraction of it is wrong.
 The cost of this choice is that no single extraction call can see that a later document
-reversed an earlier decision — which is exactly why currency is out of MVP scope and needs
-a second pass over the aggregated table. See [roadmap.md](roadmap.md).
+reversed an earlier decision — which is exactly why currency needs a second pass over the
+aggregated statements.
+
+That second pass runs in the same job, strictly after the first has finished (D31). It tags
+every statement with a topic, then reconciles each topic in one model call: which statements
+supersede, correct, contradict or answer which. Code derives a status for each statement
+from the links that survive validation — never from dates — and writes the result, with the
+statements nested inside their topics, to a second file, the reconciled file. Both files stay
+on the shared volume. If either pass fails the job exits non-zero and compose holds the
+backend. See [roadmap.md](roadmap.md).
 
 It is a FastAPI service rather than a script so that re-extraction of a single document,
 and later the deletion operation, can be triggered without redeploying anything.
 
 ### 3. backend — the customer-facing API
 
-Python/FastAPI, its own container. Takes a user question over REST, puts the statements
+Python/FastAPI, its own container. Takes a user question over REST, puts the reconciled
 file in the model's context, asks the local LLM to answer *from the statements only*, and
-returns the answer together with its citations.
+returns the answer together with its citations. Each citation carries the statement's status
+and the ids that justify it, copied from our file and never asserted by the model.
+`ANSWER_SOURCE=statements` answers from the flat statements file instead, with no status
+anywhere.
 
 The rule this service exists to enforce: **the model answers from the statements file, not
 from its own knowledge.** A claim that cannot point at a statement, and through it at a
@@ -134,15 +148,22 @@ otherwise.
 - **Extraction is offline and the backend is online.** Answering never invokes extraction.
   If a question needs something extraction did not capture, the answer is "not in the
   record", not an improvised read of the source document.
-- **The statements file is the only thing the backend reads.** Not the PDFs. This is what
-  makes deletion meaningful: there is exactly one derived artifact, so "gone from
-  everything we derived" is a claim we can actually verify.
+- **The derived files are the only things the backend reads** — one of them at a time, the
+  reconciled file by default. Not the PDFs. This is what makes deletion meaningful: "gone
+  from everything we derived" is a claim we can verify because we know the list. Since D31
+  that list has two entries, and the second holds model-written prose.
 - **The frontend holds no logic.** Anything it computes is something we would have to
   delete from twice.
 
 ## What the MVP does not have
 
-No retrieval layer, no embeddings, no vector store, no cross-document reconciliation, no
-cached summaries. Each of those is a second place a deleted person could survive, and the
-MVP is small partly so that deletion stays provable. When they arrive, deletion has to
-cascade to them — that is a condition of adding them, not a follow-up task.
+No retrieval layer, no embeddings, no vector store. Each of those is a second place a
+deleted person could survive, and the MVP is small partly so that deletion stays provable.
+When they arrive, deletion has to cascade to them — that is a condition of adding them, not
+a follow-up task.
+
+The reconciled file broke that rule's letter on purpose (D31): it is a second derived
+artifact, with model-written summaries in it, and deletion is not built yet. The decision
+says so plainly, names deletion covering both files as the condition it depends on, and
+keeps a one-line switch (`KEEP_PROSE`) to stop writing the prose if that condition is not
+met in time.

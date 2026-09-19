@@ -1,5 +1,11 @@
 NOT_STATED = "Not stated"
 
+# D31's escape hatch. The topic summaries and the model's problem notes are the only model-written
+# prose in reconciled.json, and prose is what deletion cannot redact by matching a name. If
+# deletion is not built against this file in time, set this to False: the artifact then carries
+# ids and enums only. Do not ship a half-redacted summary instead.
+KEEP_PROSE = True
+
 
 def to_statement(record: dict) -> dict:
     """The record as the answering backend loads it (see backend/src/app/statements.py and
@@ -40,4 +46,34 @@ def _actor(actor: dict) -> dict:
         "label": actor["label"],
         "organization": actor["org"] or NOT_STATED,
         "role": actor["role"] or NOT_STATED,
+    }
+
+
+def to_reconciled(topics: list[dict], problems: list[dict], generated_on: str) -> dict:
+    """The reconciled file: each topic with its statements nested inside, so the backend joins
+    nothing (D31). A statement is to_statement plus its status, and lives in exactly one topic;
+    a relation lives on its topic, once. The counts are taken from what is nested here, not from
+    what went in, so they cannot disagree with the file."""
+    nested = [
+        {
+            "topic": topic["topic"],
+            "summary": topic["summary"] if KEEP_PROSE else None,
+            "relations": topic["relations"],
+            "statements": [
+                to_statement(record) | {"status": topic["statuses"][record["id"]]}
+                for record in topic["statements"]
+            ],
+        }
+        for topic in topics
+    ]
+    return {
+        "generated_on": generated_on,
+        "statement_count": sum(len(topic["statements"]) for topic in nested),
+        "topic_count": len(nested),
+        "relation_count": sum(len(topic["relations"]) for topic in nested),
+        "problem_count": len(problems),
+        "topics": nested,
+        "problems": [
+            {**problem, "note": problem["note"] if KEEP_PROSE else ""} for problem in problems
+        ],
     }

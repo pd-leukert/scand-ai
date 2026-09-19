@@ -78,20 +78,44 @@ message count. Two things worth carrying onto the statement beyond the document 
   feature this is the field it runs on; if we do not, it is still the difference between
   quoting an internal account review to a customer and not. See [roadmap.md](roadmap.md).
 
-### When — *currency, later*
+### When — *currency*
 
 - **The date of the statement**, and separately the date of the document containing it,
   because a status report written in June can describe a decision made in March.
 
-Dates alone do not solve currency; they are a necessary input to the reconciliation pass
-that will. See [roadmap.md](roadmap.md).
+Dates alone do not solve currency. The reconciliation pass (D31, below) reads them for
+exactly one thing: ordering statements for the model, and rejecting a `supersedes` link
+that runs backwards in time. See [roadmap.md](roadmap.md).
 
-## What is deliberately absent from the MVP
+## What the reconciliation pass adds
 
-- **Status** (current / stale / never-true) and **links between statements**
-  (supersedes, contradicts, retracted-by). These are the output of a second pass over the
-  aggregated set that we are not building yet. Nothing in the MVP should pretend to know a
-  statement's status.
+A second pass over the aggregated statements (D31) writes a second file. It does not change
+a statement; it wraps them.
+
+- **Topics.** Every statement is in exactly one topic, a short kebab-case subject tag
+  (`bakery-workstream-scope`). Statements the pass could not tag sit in one `untagged`
+  topic and are never compared with anything.
+- **Relations**, stored once on their topic, each naming two statement ids in it:
+  `supersedes` (a later statement replaces what an earlier one said), `corrects` (one
+  statement says another was wrong when it was recorded), `conflicts-with` (they cannot
+  both be true and nothing settles which), `answers` (one settles a proposal or question).
+- **A status on each statement**, derived by code from the relations and never from dates:
+  `never-true` if something corrects it, else `stale` if something supersedes it, else
+  `disputed` if it conflicts with something, else `unresolved` if it is a proposal or
+  question nothing answers and nobody accepted, else `current`. `never-true` outranks
+  `stale` because reporting a record that was never true as merely old is one of the
+  failures the brief names.
+- **A one-sentence summary per topic** and **a list of problems** (reversal, never-true,
+  conflict, unanswered), each naming statement ids. These are the only model-written prose
+  in the file, and each has to name real statements or is dropped.
+
+Nothing here is a new quote: a relation, receipt or problem that does not name a statement
+the first pass produced is thrown away, and a status no surviving relation justifies is
+overruled. `current` is what an unlabelled statement is, and it means only that nothing we
+grouped with it contradicts it.
+
+## What is still deliberately absent
+
 - **People as first-class records.** Actors are described on each statement rather than
   referenced from a registry. This is the main thing that makes deletion a sweep over
   statements rather than a single operation, and it is a known cost of the MVP shape.
@@ -104,6 +128,13 @@ their spellings**, and next to a different person who shares their first name. T
 the part people forget; the spelling variant is the part that fails
 silently. A redaction that leaves the quoted line intact publishes the name in
 the citation — the one place we are guaranteed to show the judge.
+
+Since D31 there are **two** derived files, and both have to be redacted. The reconciled
+file nests every statement, so it repeats every span and actor field the statements file
+has. It also holds model-written prose — the topic summaries and problem notes — where a
+name can sit in a sentence rather than in a span, and where matching the span will not find
+it. The backend also caches what it loads, so deletion has to clear that cache or a warm
+process keeps answering with the name.
 
 See [decisions.md](decisions.md) D3 for what we replace names with, and
 [roadmap.md](roadmap.md) for the residual risk we are accepting.

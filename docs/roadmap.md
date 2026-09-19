@@ -6,30 +6,33 @@ Two audiences for this page: us, deciding what to build next, and the judges, wh
 ## MVP boundary
 
 **In:** document storage, one-shot statement extraction with per-document LLM calls,
-the aggregated statements file, a question-answering backend that reads only that file,
-a Streamlit UI that shows citations, and deletion by role-class redaction of the
-statements file.
+the aggregated statements file, a reconciliation pass that groups statements by topic and
+derives a link-based status for each (D31), a question-answering backend that reads only the
+derived files, a Streamlit UI that shows citations and their status, and deletion by
+role-class redaction of both derived files.
 
-**Out:** currency classification, cross-document reconciliation, retrieval, embeddings,
-cached summaries, a person registry, multi-user anything, and authentication.
+**Out:** retrieval, embeddings, a person registry, multi-user anything, and authentication.
 
 ## Planned extensions, in the order we would build them
 
-### 1. Reconciliation pass — closes the currency gap (20%)
+### 1. Reconciliation pass — closes the currency gap (20%) — **built, D31**
 
 A second LLM stage after extraction, over the aggregated statements rather than over
 documents. It groups statements by topic and writes down the relationships between them:
-which statement supersedes which, which contradict each other, which were retracted. From
-those links it assigns each statement a status — current, stale, or never-true.
+which statement supersedes which, which corrects which, which contradict each other, which
+answer which. From those links code derives each statement's status — current, stale,
+never-true, disputed or unresolved — and the ids that justify it travel to the citation.
 
 The distinction the brief cares about falls out of the link type, not the dates: a
 statement is *stale* when a later statement supersedes it, and *never-true* when another
 statement says it was wrong when recorded. A date sort cannot tell those apart, which is
-why this is a reasoning pass and not a sort.
+why this is a reasoning pass and not a sort. The one date it reads is a guard that rejects
+a `supersedes` link running backwards in time; it creates no status.
 
-This is the single highest-value thing we are not doing, and as of 2026-09-19 it is the
-team's agreed successor to the MVP rather than a maybe — the first thing built once the
-answering and deletion paths work. What it is *not* is a date heuristic. See D16.
+It landed before deletion did, which is the cost D31 states plainly: two derived artifacts,
+one of them holding model-written prose. Still to do: run it once on the real corpus and
+tune its two gates (`RECONCILE_MAX_UNTAGGED`, `RECONCILE_MAX_TOPICS`), whose thresholds are
+guesses until then.
 
 ### 2. Measured context ceiling, then a two-stage answer path
 
@@ -58,11 +61,22 @@ See [decisions.md](decisions.md) D3.
 statements file. Re-running extraction over the untouched source documents brings the name
 back. A production version needs the tombstone to live upstream of extraction.
 
-**No currency signal.** We do not flag stale decisions and we do not detect records that
-were never true. When the evidence conflicts, the honest behaviour is to say the record
-conflicts and cite both sides — not to pick one. Anything that looks like a currency
-judgement in our output is the answering model improvising, and should be treated as
-unreliable.
+**Our currency signal is a floor, not a guarantee.** A statement is flagged stale,
+never-true or disputed only because a model wrote a link to another statement that exists;
+the links are checked against real statement ids, never trusted on sight, but a link the
+model did not write is a link we do not have. Untagged statements, topics too large for one
+call and links across the cut all fail the same way: the statement is reported `current`.
+`current` means only that nothing we grouped with it contradicts it — it does not mean the
+record is right. The opposite error exists for `unresolved`: a missed answer leaves an
+answered proposal flagged as never answered. When the backend is switched to the statements
+file there is no signal at all, and it says so instead of calling everything current.
+
+**The topic summaries are model-written prose, and the hardest thing for deletion to
+redact.** The reconciled file holds a one-sentence summary per topic and a note per problem,
+written by a model and quoted by nobody. They are exactly what the rubric's deletion band
+calls "cached summaries", and a deleted name in one of them is not a span a match will find.
+If deletion is not built against both derived files, we stop writing the prose (`KEEP_PROSE`)
+rather than claim a deletion we do not have. See D31 and CLAUDE.md rule 4.
 
 **Answers are bounded by extraction.** If extraction missed a statement, the agent does
 not know it exists and will say the record is silent. We cannot distinguish "the documents
@@ -70,8 +84,9 @@ do not say" from "our extraction did not catch it".
 
 **Partly measured context ceiling.** The source corpus is ~363k characters — on the order
 of 90k tokens, which is why the brief says it fits in a long context window. What we do
-*not* know is the size of the statements file derived from it, and that is the number that
-decides whether D2 holds. Measure it the first time extraction runs.
+*not* know is the size of the reconciled file derived from it, and that is the number that
+decides whether D2 holds. The extraction job now prints both file sizes and a token estimate
+at the end of every run; the first real run is the measurement.
 
 **Identity is resolved by a model, not by a registry.** One person appears under two
 spellings and two people share a first name, and until extension 3 below exists there is
@@ -116,11 +131,13 @@ What the archive actually supports, cheapest first:
   looks like query-time filtering, which is the thing the deletion slice punishes — so we
   would have to be precise about why that is legitimate here and not there.
 - **(3) is the strongest story and the most work.** It needs ingestion of a new document
-  during the demo plus the reconciliation pass we have not built (extension 1). If
-  reconciliation lands early, this is the one that wins the slice.
+  during the demo, plus running the reconciliation pass (extension 1, now built) over it
+  without redoing the whole record. That second part is not built. If it lands early, this
+  is the one that wins the slice.
 - **(2) is nearly free once answering works** — a fixed brief generated at startup — but
   it is the least distinguishable from "a search engine with footnotes".
-- **(1) depends on reconciliation** as much as (3) does, without the demo moment.
+- **(1) depends on reconciliation** as much as (3) does, without the demo moment. Its
+  supersedes links now exist.
 
 Whoever picks: write the entry in [decisions.md](decisions.md), update
 [demo.md](demo.md) step 4, and say what we rejected.

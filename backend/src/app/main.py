@@ -12,7 +12,7 @@ app = FastAPI(
 
 @app.post("/query", response_model=None)
 async def query(request: QueryRequest) -> QueryResponse | StreamingResponse:
-    """Answer a question from the statements file only, with verified citations."""
+    """Answer a question from the reconciled file only, with verified citations."""
     if request.stream:
         return StreamingResponse(
             stream_answer_question(request.question),

@@ -17,11 +17,13 @@ RUN uv sync --locked --package backend --no-install-workspace
 
 COPY backend/ backend/
 
-# The statements file the answering path reads, and the only thing it reads. Mounted
-# read-only by compose; extraction is the only writer. Read by config.py as
-# STATEMENTS_FILE_PATH — this name has to match what extraction's Dockerfile sets, or the
-# backend silently falls back to the bundled mock file. See D28.
-ENV STATEMENTS_FILE_PATH=/data/statements.json
+# The two derived files, and the only things the answering path reads. Both stay on the
+# volume compose mounts read-only; extraction is the only writer. config.py reads them as
+# STATEMENTS_FILE_PATH and RECONCILED_FILE_PATH — these names have to match what extraction's
+# Dockerfile sets, or the backend silently falls back to the bundled mock files. ANSWER_SOURCE
+# picks which one it answers from, and defaults to the reconciled file. See D28 and D31.
+ENV STATEMENTS_FILE_PATH=/data/statements.json \
+    RECONCILED_FILE_PATH=/data/reconciled.json
 
 WORKDIR /app/backend
 EXPOSE 8000
