@@ -2,7 +2,7 @@
 
 Field shape follows docs/data-model.md. Not a schema until the real dataset is in hand
 (decisions.md D7) — this is the interim shape the mock file and the answering path agree
-on; see decisions.md D10.
+on; see decisions.md D20.
 """
 
 from __future__ import annotations

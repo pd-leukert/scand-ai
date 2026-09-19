@@ -7,7 +7,7 @@ backend then looks each id up in its own trusted copy of the statements file and
 the citation from that — never from text the model produced. An id the model invents, or
 mangles while decoding the base64 payload, simply resolves to nothing and is dropped. This
 is what CLAUDE.md means by "if code cannot guarantee [a citation], it must emit no
-citation rather than an approximate one" — see decisions.md D10.
+citation rather than an approximate one" — see decisions.md D21.
 """
 
 from __future__ import annotations
