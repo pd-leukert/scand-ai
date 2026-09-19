@@ -6,6 +6,7 @@ EXTRACTION_LLM_MODEL=<model> uv run python -m src.app.extract [DOC_ID_SUBSTRING 
 
 import json
 import os
+import shutil
 import sys
 from datetime import date
 from pathlib import Path
@@ -39,6 +40,17 @@ def _ollama_chat(client: httpx.Client, model: str, num_ctx: int) -> Chat:
     return chat
 
 
+def _write_json(path: Path, statements: list[dict]) -> None:
+    """Written whole or not at all: a half-written file must never look like the record."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(
+        json.dumps({"statements": statements}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(tmp, path)
+
+
 def main(filters: list[str]) -> int:
     model = os.environ.get("EXTRACTION_LLM_MODEL")
     if not model:
@@ -51,8 +63,7 @@ def main(filters: list[str]) -> int:
     # (D23); this job calls Ollama's native /api/chat instead, for schema-constrained
     # output (D28), so the "/v1" the answering path needs is stripped back off here.
     host = os.environ.get("EXTRACTION_LLM_BASE_URL", "http://localhost:11434").removesuffix("/v1")
-    num_ctx = int(os.environ.get("EXTRACTION_NUM_CTX", "8192"))
-    batch_words = int(os.environ.get("EXTRACTION_BATCH_WORDS", "300"))
+    num_ctx = int(os.environ.get("EXTRACTION_NUM_CTX", "32768"))
     timeout = float(os.environ.get("EXTRACTION_TIMEOUT", "600"))
     corpus = Path(os.environ.get("CORPUS_DIR", Path(__file__).parents[3] / "input"))
     out = Path(os.environ.get("STATEMENTS_FILE_PATH", "statements.json"))
@@ -68,6 +79,11 @@ def main(filters: list[str]) -> int:
     max_topic_share = float(os.environ.get("RECONCILE_MAX_TOPIC_SHARE", "0.5"))
     max_flagged = float(os.environ.get("RECONCILE_MAX_FLAGGED", "0.5"))
     reconciled_out = Path(os.environ.get("RECONCILED_FILE_PATH", "reconciled.json"))
+    # One JSON file per document, written as soon as that document is done, so progress is
+    # visible while a slow model works through the corpus and a crash partway through does
+    # not lose the documents already finished. The final file below is just these
+    # concatenated, per doc_id, never assembled any other way.
+    per_doc_dir = out.parent / "documents"
 
     docs = load_corpus(corpus)
     total = len(docs)
@@ -77,13 +93,25 @@ def main(filters: list[str]) -> int:
         print(f"No document in {corpus} matches {filters}.", file=sys.stderr)
         return 2
 
+    # What reconciliation reads. The per-document files below hold the written shape
+    # (to_statement), which has dropped the fields the second pass needs, so the raw records
+    # are kept here alongside them (D40).
     records: list[dict] = []
     empty: list[str] = []
     with httpx.Client(base_url=host, timeout=timeout) as client:
         chat = _ollama_chat(client, model, num_ctx)
         for doc in docs:
-            found, dropped = extract_document(doc, chat, batch_words)
-            linked = link_agreements(found, chat)
+            try:
+                found, dropped = extract_document(doc, chat)
+                linked = link_agreements(found, chat)
+            except (httpx.HTTPError, json.JSONDecodeError) as exc:
+                # A truncated or malformed model response must not take the whole corpus
+                # down with it — the documents already written (this loop, D35) and the
+                # ones still to come are both worth more than crashing here. Treated the
+                # same as a document that legitimately produced nothing: recorded in
+                # `empty`, so the job still fails loudly overall.
+                print(f"{doc.doc_id}: extraction call failed ({exc})", file=sys.stderr)
+                found, dropped, linked = [], {}, {}
             records.extend(found)
             if not found:
                 empty.append(doc.doc_id)
@@ -91,23 +119,31 @@ def main(filters: list[str]) -> int:
             print(
                 f"{doc.doc_id}: {len(found)} statements{note}, responses {dict(linked)}", flush=True
             )
+            doc_out = per_doc_dir / f"{doc.doc_id}.json"
+            _write_json(doc_out, [to_statement(record) for record in found])
+            print(f"  wrote {doc_out}", flush=True)
+
+    # The massive file is exactly these, concatenated in the same order docs were walked in.
+    merged: list[dict] = []
+    for doc in docs:
+        doc_out = per_doc_dir / f"{doc.doc_id}.json"
+        merged.extend(json.loads(doc_out.read_text(encoding="utf-8"))["statements"])
 
     # Nothing extracted must not look like a finished record: exit non-zero so compose holds
     # the backend, and leave any earlier file alone.
-    if not records:
+    if not merged:
         print("No statements were extracted, so nothing was written.", file=sys.stderr)
         return 1
 
-    # Written whole or not at all: a half-written file must never look like the record.
-    tmp = out.with_name(out.name + ".tmp")
-    statements = [to_statement(record) for record in records]
-    tmp.write_text(
-        json.dumps({"statements": statements}, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    os.replace(tmp, out)
+    _write_json(out, merged)
+    # per_doc_dir was scratch: visible progress and crash resilience while the run was in
+    # flight, nothing once the merge it exists for has succeeded. Kept around it would be a
+    # second copy of every actor name and verbatim span outside the one derived artifact
+    # deletion knows how to reach (CLAUDE.md rule 4) — an interrupted run still leaves it
+    # behind, which is the point, but a clean run does not.
+    shutil.rmtree(per_doc_dir, ignore_errors=True)
     partial = f" (only {len(docs)} of {total} documents)" if len(docs) < total else ""
-    print(f"Wrote {len(records)} statements to {out}{partial}")
+    print(f"Wrote {len(merged)} statements to {out}{partial}")
     if empty:
         # A document with no statements is a silent gap in the record, so the job fails.
         print(f"No statements from: {', '.join(empty)}", file=sys.stderr)

@@ -1,5 +1,5 @@
 from src.app.documents import parse_document
-from src.app.extraction import SYSTEM_PROMPT, _batches, extract_document
+from src.app.extraction import SYSTEM_PROMPT, extract_document
 
 TEAMS = """*** SYNTHETIC DATA.
 Meeting: Design workshop
@@ -41,7 +41,7 @@ def statement(**overrides) -> dict:
 
 def run(*items: dict) -> tuple[list[dict], dict]:
     doc = parse_document(TEAMS, "transcripts/07_design", "transcript")
-    records, dropped = extract_document(doc, lambda messages: {"statements": list(items)}, 1000)
+    records, dropped = extract_document(doc, lambda messages: {"statements": list(items)})
     return records, dict(dropped)
 
 
@@ -85,7 +85,7 @@ def test_a_cut_off_number_cannot_be_completed():
 def test_a_unit_number_outside_the_document_is_dropped():
     records, dropped = run(statement(unit=9))
     assert records == []
-    assert dropped == {"unit not in this batch": 1}
+    assert dropped == {"unit not in this document": 1}
 
 
 def test_an_unknown_act_or_handling_or_an_empty_claim_is_dropped():
@@ -116,12 +116,6 @@ def test_an_organisation_or_role_the_document_does_not_state_is_null():
 def test_a_speaker_the_file_does_not_name_stays_unnamed():
     records, _ = run(statement(unit=3, span="Waste was roughly 3", org=None))
     assert records[0]["actor"] == {"name": None, "label": "Guest 1", "org": None, "role": None}
-
-
-def test_units_are_batched_by_words_and_never_split():
-    doc = parse_document(TEAMS, "transcripts/07_design", "transcript")
-    assert [list(batch) for batch in _batches(doc.units, 1000)] == [[1, 2, 3]]
-    assert [list(batch) for batch in _batches(doc.units, 5)] == [[1], [2], [3]]
 
 
 def test_the_prompt_tells_the_model_not_to_complete_cut_off_text():

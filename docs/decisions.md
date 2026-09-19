@@ -870,6 +870,239 @@ statement_extraction/README.md.
 
 ---
 
+## D31 — 2026-09-19 — Accepted
+**`extract_document` sends a whole document to the model in one call. The
+`EXTRACTION_BATCH_WORDS` word-count chunker (`_batches`, default 300 words) is deleted, not
+reconfigured.**
+
+The chunker came in with D28's port and split a document's units into runs of ~300 words so
+each model call stayed small; D28 doesn't call the number out, it's just what the ported
+code did. Direction from Niek: remove it outright rather than raise the default — a
+document is 45 files at most a few thousand words each (the largest,
+`reports/01_weekly-status-thread.txt`, is ~3,300), well inside a modern local model's
+context window, and splitting mid-document means the model extracting unit 40 cannot see
+units 1–39: an agreement, a correction, or the attendee list that would have told it a
+speaker's org can land in a batch it never gets to read. `extract_document` now builds one
+`messages` list from the full unit range and makes one `chat()` call per document; `_batches`
+and the `EXTRACTION_BATCH_WORDS` env var are gone, not defaulted differently.
+
+Rejected: *raising the default instead of removing the mechanism.* Keeps a second
+context-sizing knob (`EXTRACTION_BATCH_WORDS` alongside `EXTRACTION_NUM_CTX`) whose only
+job was working around a limit this corpus doesn't hit, and keeps the cross-batch
+blind-spot for any document that still lands over the raised number.
+
+*Cost:* a document that does approach `EXTRACTION_NUM_CTX` (default 8192) no longer has a
+chunker to fall back on — the fix is raising `EXTRACTION_NUM_CTX`, documented in
+statement_extraction/README.md, not re-adding a splitter. The whole-document prompt is also
+a bigger single call than before, so an extraction run trades many small requests for fewer,
+larger ones; `EXTRACTION_TIMEOUT` (default 600s) is the relevant dial if that matters on a
+slower host.
+
+---
+
+## D32 — 2026-09-19 — Accepted
+**The answering path's HTTP client to Ollama gets a configurable `LLM_TIMEOUT` (default
+600s), replacing a hardcoded 120s. A mid-stream failure now ends the SSE stream with its
+own `error` event instead of dying silently.**
+
+Reported symptom: the frontend showed "Could not reach the backend: Response ended
+prematurely" after a long wait on a large model. Traced to
+`stream_answer_question`/`answer_question` in backend/src/app/llm_client.py, both of which
+opened `httpx.AsyncClient(timeout=120)`. httpx's (and requests') timeout is a *read*
+timeout — seconds of silence between chunks, not a cap on the whole call — so this fires
+whenever the model goes quiet for over 120s, which a large model does routinely during
+prefill of the full statements payload, well before it emits a first token. When it fired
+mid-stream, the exception propagated out of the async generator `StreamingResponse` was
+iterating; headers and some chunked body were already on the wire, so the ASGI connection
+just stopped instead of sending the terminating chunk. The frontend's `requests` client
+reads that as a broken chunked encoding — "Response ended prematurely" is urllib3's message
+for exactly that, not a requests-level timeout, which is why raising the frontend's own
+`REQUEST_TIMEOUT` alone would not have fixed it.
+
+Fix, two parts:
+- `Settings.llm_timeout` (`LLM_TIMEOUT` env var, default `600`) replaces both hardcoded
+  `timeout=120` call sites. 600s matches `EXTRACTION_TIMEOUT`'s existing default (D31) —
+  the same "boring, generous, configurable" shape, not a new pattern.
+- `stream_answer_question` now wraps its httpx call in `try/except httpx.HTTPError` and
+  yields an `error` SSE event (`{"message": ...}`) instead of letting the exception kill
+  the stream uninstructed. The frontend's `stream_backend()` gained a matching
+  `elif event_type == "error"` branch that sets `result["error"]`, reusing the error box
+  the UI already has for connection failures. This is the same fix even if `LLM_TIMEOUT` is
+  raised further and still gets hit, or Ollama returns a 5xx mid-stream: an honest "the
+  model did not answer" beats a cryptic transport error, per CLAUDE.md's "fails honestly."
+- Frontend's `REQUEST_TIMEOUT` (now `BACKEND_REQUEST_TIMEOUT` env var) raised to `600` to
+  match, so it doesn't become the next thing that cuts off a long wait now that the backend
+  is configured to tolerate one.
+
+Rejected: *raising the hardcoded value without making it configurable.* Same class of
+problem as `EXTRACTION_BATCH_WORDS` before D31 — a number picked for a demo-sized case,
+silently wrong for a slower host or a bigger context, with no dial to reach for. Rejected
+also: *catching the exception in main.py's `/query` handler.* By the time `StreamingResponse`
+is iterating the generator, the response has already started; a handler-level catch can't
+turn already-sent chunked output into a clean response. The generator is the only place
+that can end the stream on its own terms.
+
+*Cost:* a genuinely stuck Ollama (hung, not just slow) now takes up to 10 minutes to report
+as an error instead of 2 — the tradeoff for not cutting off a slow-but-working large model.
+`BACKEND_REQUEST_TIMEOUT` and `LLM_TIMEOUT` are two variables that have to be kept in step
+(documented in both READMEs, not enforced in code); nothing stops someone raising one and
+forgetting the other, same shape of risk D25/D26 already accepted for the runtime switch.
+
+---
+
+## D33 — 2026-09-19 — Accepted
+**The answering call to Ollama's OpenAI-compatible endpoint sends `"reasoning_effort":
+"none"`, not `"think": false`. Verified against a running local model, not assumed.**
+
+Same motivation as raising `LLM_TIMEOUT` in D32 — a thinking model spends real time
+reasoning before it ever emits the answer, and answering here is picking and paraphrasing a
+citation, never a problem that benefits from working through steps. extraction.py already
+disables this for the same reason (`"think": False`, module docstring's comment on why),
+which made `"think": false` the obvious first thing to copy into `llm_client.py`'s
+`_request_payload`. It doesn't work: extraction calls Ollama's native `/api/chat`, this
+module calls the OpenAI-compatible `/v1/chat/completions` — different endpoint, different
+field. Checked directly against `qwen3:0.6b` on the local Ollama: a plain request and one
+with `"think": false` both came back with a populated `reasoning` field and
+~340-428 `completion_tokens` for a one-word answer; `"reasoning_effort": "none"` came back
+with no `reasoning` field and 10 `completion_tokens` for the same question. That field name
+mirrors OpenAI's own reasoning-effort parameter, which is presumably why Ollama's
+OpenAI-compatible layer honors that name instead.
+
+Rejected: *assuming `"think": false` carried over from D28's ported extraction code and
+moving on.* It doesn't error, doesn't warn, and returns a normal-looking response — the
+model just keeps reasoning at full length. Silent no-ops like this are exactly what a
+30-second empirical check against the real local model catches and a code read does not.
+
+*Cost:* none identified for the current model. If the answering model is ever swapped for
+one Ollama's OpenAI-compatible layer maps `reasoning_effort` differently for (or not at
+all), this needs re-verifying the same way — this entry is a fact about qwen3:0.6b and
+Ollama 0.34.2 on this endpoint, not a guarantee for every model or Ollama version.
+
+---
+
+## D34 — 2026-09-19 — Accepted — Supersedes D33
+**`_request_payload` sends `"chat_template_kwargs": {"enable_thinking": false}`, per
+docs/qwen_3.8_quickstart.md, instead of D33's `"reasoning_effort": "none"`.**
+
+D33 verified `"reasoning_effort": "none"` against the model actually running in this dev
+environment (`qwen3:0.6b`) and it worked — but D33's own cost note already flagged that as
+a fact about that one model, not a guarantee for whatever the answering model is deployed
+as. The deployed model is different: `LLM_MODEL=qwen3.8:27b-mtp-bf16` in production versus
+`qwen3:0.6b` here (D25). docs/qwen_3.8_quickstart.md is that model family's own
+documentation, and it says two things D33 didn't know: `reasoning_effort` for Qwen3.8 only
+takes `xhigh`/`medium`/`low` — there is no documented off value, so `"none"` was never a
+supported setting for the model this actually has to run against, just a value Ollama's
+qwen3:0.6b handling happened not to reject. The documented way to fully turn thinking off
+is `chat_template_kwargs: {"enable_thinking": false}` (`extra_body` in the doc's Python SDK
+examples is the SDK's name for "merge these keys into the top-level request JSON," not a
+literal wire field).
+
+Checked what D33's method checked, and it comes back negative: `chat_template_kwargs`
+against `qwen3:0.6b` via this repo's Ollama is a silent no-op, same shape as D33's finding
+about `"think"` — accepted (200, no error), reasoning unchanged. Expected: `qwen3:0.6b` is
+a different, older model line and doesn't speak the Qwen3.8 chat template this key
+controls. Kept anyway, on direction from Niek, because the target of the fix is the
+production model's documented contract, not what the dev placeholder happens to honor.
+
+Rejected: *keeping D33's `"reasoning_effort": "none"` as a belt-and-suspenders addition
+alongside `enable_thinking`.* The doc enumerates `reasoning_effort`'s valid values for this
+model family and `"none"` is not among them; a server that validates the enum strictly
+could 400 on every `/query` call once pointed at the real model — worse than the thing
+being fixed, and on the path that matters most. Sending an unlisted value on a guess is the
+exact mistake D33 was written to stop making.
+
+*Cost, and it is real:* unlike D33, this entry's fix is **not verified against the model it
+targets** — there is no Qwen3.8-family model in this environment to check it against, only
+the dev-default `qwen3:0.6b`, which (as above) can't confirm or deny it. This is asserted
+from the vendor doc, not observed. Before relying on it for a demo, run the same check D33
+ran — a short prompt, compare `usage.completion_tokens` and the presence of a `reasoning`
+field with and without the flag — directly against `qwen3.8:27b-mtp-bf16` on the VM.
+
+---
+
+## D35 — 2026-09-19 — Accepted
+**Extraction writes one JSON file per document under `documents/` as it goes, so progress is
+visible during a slow run. `STATEMENTS_FILE_PATH` is these files concatenated, and the
+directory is deleted once that concatenation succeeds — it is scratch, not a second
+artifact.**
+
+Direction from Niek: print/see each document's file as extraction works through the corpus,
+and assemble the final file from them at the end. Implementation in
+statement_extraction/src/app/extract.py: `_write_json()` (the same atomic tmp-then-`replace`
+write the final file already used) writes `documents/<doc_id>.json` right after each
+document's `extract_document`/`link_agreements` pass, printing the path; once the loop ends,
+those same files are read back and concatenated, in doc-id order, into the final file.
+
+The cleanup is not what was asked for — it's what CLAUDE.md rule 4 requires once the shape
+above exists. `documents/*.json` carries the same actor names and verbatim spans as the
+derived statements file; left in place permanently, it is a second location deletion would
+have to reach, and nothing does — deletion isn't built yet for the *primary* file either, so
+there was nothing to "wire in" today, only a gap to leave for whoever builds it. Rather than
+leave that gap, the job deletes `documents/` (`shutil.rmtree`, best-effort) right after the
+merged file is written. That still delivers the actual ask — the files exist and are
+visible for the entire run — without leaving a lasting copy of the data outside the one
+place deletion will know to look.
+
+Rejected: *keeping the per-document files permanently for post-hoc debugging.* Real value
+(inspecting one document's extraction without rerunning the whole corpus), but it's exactly
+the second-artifact shape rule 4 warns about, on a corpus whose whole premise is that
+judges test deletion by checking everywhere a person could survive. The debugging value is
+also mostly redundant with what already prints to stdout per document (statement count,
+drop reasons, agreement-linking responses).
+
+*Cost:* a run that fails outright (every document comes back empty, D30/D31's "must not
+look like a finished record" branch) never reaches the cleanup line, so `documents/` is left
+behind in exactly that case — deliberately, since a fully-failed run is also the case
+debugging most needs the per-document breakdown. A run interrupted partway (killed, crashed)
+leaves it behind too, for the same reason. Only a clean, fully-merged run cleans up; anyone
+inspecting a stale `documents/` directory after such a run should treat it as leftover from
+an earlier failed attempt, not as current.
+
+---
+
+## D36 — 2026-09-19 — Accepted
+**Fixes a production crash: `EXTRACTION_NUM_CTX`'s default raised 8192 → 32768, and one
+document's malformed model response no longer takes down the whole extraction run.**
+
+Reported symptom: the extraction container crashed with an unhandled
+`json.decoder.JSONDecodeError: Unterminated string`, in `_ollama_chat`'s
+`json.loads(response.json()["message"]["content"])`. Root cause: D31 removed the ~300-word
+chunker and started sending a whole document to the model in one call, on the reasoning
+that every document in this corpus is small enough to fit — true for the input side, but
+D31's own cost note already flagged the output side as unchecked: a document with many
+statements needs a correspondingly long schema-constrained JSON response, and input plus
+output both draw from the same `num_ctx` budget. Once that budget runs out mid-generation,
+Ollama stops — not with an error, just a response cut off wherever it was, which is exactly
+what "unterminated string" is: valid JSON up to the point the token budget ended, then
+nothing.
+
+Two changes, addressing both what happened and what should happen next time it does:
+- `EXTRACTION_NUM_CTX`'s default is 32768, not 8192 — four times the headroom, comfortably
+  covering the corpus's largest document (~3,300 words) plus a generous statement count,
+  without requiring exotic extended-context support from the model.
+- `main()`'s per-document loop now wraps `extract_document`/`link_agreements` in
+  `try/except (httpx.HTTPError, json.JSONDecodeError)`. A failure is treated exactly like a
+  document that legitimately produced nothing: logged, added to `empty`, given an empty
+  `documents/<doc_id>.json` (D35), and the job moves on. The run still fails overall (same
+  "a document with no statements is a silent gap" exit-1 path already in place) — this
+  isn't hiding the failure, it's refusing to let one bad response erase every other
+  document's completed work in the same run.
+
+Rejected: *raising `num_ctx` alone, without the try/except.* Reduces how often this
+happens but doesn't change what happens when it still does — some document, some model,
+some day, produces more output than any finite budget holds, and D35's whole premise (a
+crash shouldn't cost you the documents already done) was only half-built without also
+covering documents *not yet reached* when the crash happens.
+
+*Cost:* a document that fails this way now silently contributes zero statements to the
+final file rather than stopping the run for a human to look at — the same tradeoff D31 and
+D35 already accepted for other empty-document cases, extended to a new cause of emptiness.
+The stderr line (`"{doc_id}: extraction call failed (...)"`) is what distinguishes "the
+model genuinely found nothing" from "the call broke" in the log; nothing enforces that
+distinction downstream, since both feed the same `empty` list and the same exit code.
+
+---
+
 ## D40 — 2026-09-19 — Accepted *(supersedes D4 and D16)*
 *Numbering: written as D31–D34 on the `david/llm-b` branch and renumbered D40–D43 at merge,
 because `main` had meanwhile taken D31–D36 for the whole-document extraction work (PR #19, #21),
@@ -1148,20 +1381,17 @@ appear anywhere in the archive. Three separate causes, all in the answering path
   by 4/3 and tokenises at about 2.3 characters a token where JSON manages about 3.3 — the
   four-document record is ~23k tokens encoded against ~12k plain, and the full corpus is
   ~240k against ~126k. D21's trust boundary stands; only its encoding is superseded.
-- **The two hard-coded 120-second timeouts are configuration** (`LLM_TIMEOUT`,
-  `REQUEST_TIMEOUT`). Processing the record as prompt is linear in its size; on the laptop's CPU
-  a 25k-token record takes longer than two minutes, and the run above failed on the timeout
-  rather than on anything to do with the answer. The frontend waits slightly longer than the
-  backend, so what a caller sees is the backend's own timeout rather than a severed connection.
-  A timeout is now a 504 naming `LLM_TIMEOUT` and saying why, not a 500 and a traceback.
-- **The timeout default and the size guard are set to agree.** Measured: the laptop stack
-  processes prompt at about 17 tokens a second, so a record at the 16384 default takes roughly
-  a quarter of an hour, and the first draft of this entry shipped `LLM_TIMEOUT=600` — a guard
-  that admits records the timeout then kills. 1800 is what 16384 tokens costs on a slow CPU
-  with headroom. On a GPU this is never approached. Raise `OLLAMA_CONTEXT_LENGTH` without
-  raising `LLM_TIMEOUT` and the pair goes back out of step, which is the same class of mistake
-  as the two context variables and has the same answer: the `ollama-pull` banner prints what
-  was resolved.
+- **Timeouts: D32 made `LLM_TIMEOUT` configurable; what this entry adds is that the numbers
+  agree.** D32 replaced the hard-coded 120 seconds with `LLM_TIMEOUT` (default 600) and ends a
+  streamed answer with an SSE `error` event on a timeout. This branch found the same bug
+  independently, and that part is D32's. What is new here: the non-streaming path returned a 500
+  and a traceback on a timeout, so `/query` now answers 504 naming `LLM_TIMEOUT` and saying why.
+  And a default that disagrees with the size guard — measured: the laptop stack processes prompt
+  at about 17 tokens a second, so a record at the 16384 default takes roughly a quarter of an
+  hour, and D32's 600 is a guard that admits records the timeout then kills. Compose therefore
+  sets `LLM_TIMEOUT=1800` and `BACKEND_REQUEST_TIMEOUT=1860`, in step as D32 already asks. On a
+  GPU neither is approached. Raise `OLLAMA_CONTEXT_LENGTH` without raising `LLM_TIMEOUT` and the
+  pair is back out of step — the same class of mistake as the two context variables.
 
 *Cost:* `OLLAMA_CONTEXT_LENGTH` and `LLM_NUM_CTX` are two variables that have to be raised
 together and nothing enforces it — set the guard above what the server serves and the truncation

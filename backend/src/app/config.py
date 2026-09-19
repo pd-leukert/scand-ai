@@ -22,9 +22,9 @@ class Settings:
     # What the Ollama server is configured to serve, not something we can ask for per request:
     # the OpenAI-compatible endpoint has no num_ctx. Unset turns the size guard off. See D43.
     llm_num_ctx: int | None
-    # Seconds to wait on one answer. Prompt processing is linear in the size of the record, so
-    # the laptop stack needs far longer than a GPU does. See D43.
-    llm_timeout_seconds: float
+    # Seconds to wait on the model. Prompt processing is linear in the size of the record, so a
+    # laptop CPU needs far longer than a GPU does. See D32 and D43.
+    llm_timeout: float
     answer_source: Literal["reconciled", "statements"]
     statements_file: str
     reconciled_file: str
@@ -57,7 +57,7 @@ def get_settings() -> Settings:
         llm_model=model,
         llm_api_key=os.environ.get("LLM_API_KEY"),
         llm_num_ctx=num_ctx,
-        llm_timeout_seconds=float(os.environ.get("LLM_TIMEOUT", "120")),
+        llm_timeout=float(os.environ.get("LLM_TIMEOUT", "600")),
         answer_source=answer_source,
         statements_file=os.environ.get("STATEMENTS_FILE_PATH", str(data / "mock_statements.json")),
         reconciled_file=os.environ.get("RECONCILED_FILE_PATH", str(data / "mock_reconciled.json")),

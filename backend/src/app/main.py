@@ -45,7 +45,7 @@ async def query(request: QueryRequest) -> QueryResponse | StreamingResponse:
         # The whole record is processed as prompt before a single token comes back, so a slow
         # box times out rather than answers. Saying that is useful; a 500 and a traceback in
         # the backend log is not. See D43.
-        waited = get_settings().llm_timeout_seconds
+        waited = get_settings().llm_timeout
         raise HTTPException(
             status_code=504,
             detail=(
