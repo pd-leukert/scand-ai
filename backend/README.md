@@ -22,6 +22,12 @@ Run with `uv run fastapi dev` from the `backend` folder.
 Optional:
 
 - `LLM_API_KEY` — sent as `Authorization: Bearer ...` if set. Ollama doesn't need one.
+- `LLM_TIMEOUT` — seconds of silence from the model before the answering call gives up.
+  Defaults to `600`. This is a read timeout (time between chunks), not a cap on the whole
+  answer, but a large model can still take minutes to produce its first token against the
+  full statements payload — raise this before raising `LLM_MODEL`'s size. The frontend's
+  own `BACKEND_REQUEST_TIMEOUT` (frontend/README.md) should stay at or above this value, or
+  it becomes the next thing that cuts the answer off.
 - `STATEMENTS_FILE_PATH` — defaults to the mock file at `src/app/data/mock_statements.json`.
   Points at the real derived statements file once extraction produces one.
 - `DUMMY_LLM` — set to `true` to skip the model call entirely and answer from a canned

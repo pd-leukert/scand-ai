@@ -1,7 +1,7 @@
 from collections import Counter
 from collections.abc import Callable
 
-from .documents import Document, Unit
+from .documents import Document
 from .matching import find_span
 
 ACTS = ["proposal", "agreement", "decision", "report", "question", "objection"]
@@ -106,59 +106,57 @@ LOOKAHEAD = 8
 Chat = Callable[..., dict]
 
 
-def extract_document(
-    doc: Document, chat: Chat, batch_words: int
-) -> tuple[list[dict], Counter[str]]:
+def extract_document(doc: Document, chat: Chat) -> tuple[list[dict], Counter[str]]:
     """Statements for one document, and how many the model returned that we threw away."""
     records: list[dict] = []
     dropped: Counter[str] = Counter()
     seen: set[tuple[int, str]] = set()
     header = _header(doc)
-    for batch in _batches(doc.units, batch_words):
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": header + _render(doc, batch)},
-        ]
-        for item in chat(messages)["statements"]:
-            unit_no, claim = item["unit"], item["claim"].strip()
-            if unit_no not in batch:
-                dropped["unit not in this batch"] += 1
-                continue
-            unit = doc.units[unit_no - 1]
-            match = find_span(unit, item["span"])
-            if match is None:
-                dropped["span not in the unit"] += 1
-                continue
-            if not claim or item["act"] not in ACTS or item["handling"] not in HANDLING:
-                dropped["no claim or unknown act or handling"] += 1
-                continue
-            if (unit_no, match.text) in seen:
-                dropped["duplicate"] += 1
-                continue
-            seen.add((unit_no, match.text))
-            context = _flat(header + " ".join(line.text for line in unit.lines))
-            records.append(
-                {
-                    "id": f"{doc.doc_id}#{len(records) + 1}",
-                    "doc_id": doc.doc_id,
-                    "doc_type": doc.doc_type,
-                    "doc_date": doc.doc_date,
-                    "stated_on": unit.sent or doc.doc_date,
-                    "position": match.position,
-                    "lines": [match.first_line, match.last_line],
-                    "span": match.text,
-                    "claim": claim,
-                    "act": item["act"],
-                    "handling": item["handling"],
-                    "actor": {
-                        "name": unit.name,
-                        "label": unit.label,
-                        "org": _stated(item["org"], context),
-                        "role": _stated(item["role"], context),
-                    },
-                    "agreed_by": [],
-                }
-            )
+    whole = range(1, len(doc.units) + 1)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": header + _render(doc, whole)},
+    ]
+    for item in chat(messages)["statements"]:
+        unit_no, claim = item["unit"], item["claim"].strip()
+        if unit_no not in whole:
+            dropped["unit not in this document"] += 1
+            continue
+        unit = doc.units[unit_no - 1]
+        match = find_span(unit, item["span"])
+        if match is None:
+            dropped["span not in the unit"] += 1
+            continue
+        if not claim or item["act"] not in ACTS or item["handling"] not in HANDLING:
+            dropped["no claim or unknown act or handling"] += 1
+            continue
+        if (unit_no, match.text) in seen:
+            dropped["duplicate"] += 1
+            continue
+        seen.add((unit_no, match.text))
+        context = _flat(header + " ".join(line.text for line in unit.lines))
+        records.append(
+            {
+                "id": f"{doc.doc_id}#{len(records) + 1}",
+                "doc_id": doc.doc_id,
+                "doc_type": doc.doc_type,
+                "doc_date": doc.doc_date,
+                "stated_on": unit.sent or doc.doc_date,
+                "position": match.position,
+                "lines": [match.first_line, match.last_line],
+                "span": match.text,
+                "claim": claim,
+                "act": item["act"],
+                "handling": item["handling"],
+                "actor": {
+                    "name": unit.name,
+                    "label": unit.label,
+                    "org": _stated(item["org"], context),
+                    "role": _stated(item["role"], context),
+                },
+                "agreed_by": [],
+            }
+        )
     return records, dropped
 
 
@@ -217,20 +215,6 @@ def _when(record: dict) -> tuple[int, ...]:
     if record["doc_type"] == "transcript":
         return (record["lines"][0],)
     return (-int(record["position"].split()[1]), record["lines"][0])
-
-
-def _batches(units: list[Unit], batch_words: int) -> list[range]:
-    """Consecutive runs of unit numbers (1-based), each about batch_words long."""
-    batches: list[range] = []
-    start, words = 1, 0
-    for number, unit in enumerate(units, 1):
-        size = sum(len(line.text.split()) for line in unit.lines)
-        if words and words + size > batch_words:
-            batches.append(range(start, number))
-            start, words = number, 0
-        words += size
-    batches.append(range(start, len(units) + 1))
-    return batches
 
 
 def _header(doc: Document) -> str:

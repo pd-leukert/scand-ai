@@ -143,6 +143,14 @@ def _request_payload(question: str, statements: dict[str, Statement], *, stream:
         "model": settings.llm_model,
         "messages": _build_messages(question, statements),
         "stream": stream,
+        # Answering is picking and paraphrasing a citation, not solving a novel problem — a
+        # thinking model spends real wall-clock time reasoning before it ever emits the
+        # answer. docs/qwen_3.8_quickstart.md's documented way to fully disable it is
+        # chat_template_kwargs.enable_thinking, not "reasoning_effort" (that dial only goes
+        # down to "low" for this model family, never off) and not extraction's native-API
+        # "think" field — see D34. Left unverified against the real 27B deployment model;
+        # it's a no-op against the dev-default qwen3:0.6b, which doesn't speak this template.
+        "chat_template_kwargs": {"enable_thinking": False},
     }
 
 
@@ -163,7 +171,7 @@ async def answer_question(question: str) -> QueryResponse:
     payload = _request_payload(question, statements, stream=False)
     url = f"{settings.llm_base_url}/chat/completions"
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
         response = await client.post(url, json=payload, headers=_headers())
         response.raise_for_status()
         body = response.json()
@@ -195,35 +203,44 @@ async def stream_answer_question(question: str) -> AsyncIterator[bytes]:
     delimiter_seen = False
     safety_margin = len(CITATION_DELIMITER) - 1
 
-    async with httpx.AsyncClient(timeout=120) as client:
-        async with client.stream("POST", url, json=payload, headers=_headers()) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                data = line.removeprefix("data:").strip()
-                if data == "[DONE]":
-                    break
-                chunk = json.loads(data)
-                delta = chunk["choices"][0]["delta"].get("content", "")
-                if not delta:
-                    continue
-                buffer += delta
+    try:
+        async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
+            async with client.stream("POST", url, json=payload, headers=_headers()) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line.removeprefix("data:").strip()
+                    if data == "[DONE]":
+                        break
+                    chunk = json.loads(data)
+                    delta = chunk["choices"][0]["delta"].get("content", "")
+                    if not delta:
+                        continue
+                    buffer += delta
 
-                if not delimiter_seen and CITATION_DELIMITER in buffer:
-                    delimiter_seen = True
-                    idx = buffer.index(CITATION_DELIMITER)
-                    if idx > flushed:
-                        yield _sse("token", {"text": buffer[flushed:idx]})
-                    flushed = idx
-                    continue
-                if delimiter_seen:
-                    continue
+                    if not delimiter_seen and CITATION_DELIMITER in buffer:
+                        delimiter_seen = True
+                        idx = buffer.index(CITATION_DELIMITER)
+                        if idx > flushed:
+                            yield _sse("token", {"text": buffer[flushed:idx]})
+                        flushed = idx
+                        continue
+                    if delimiter_seen:
+                        continue
 
-                safe_upto = len(buffer) - safety_margin
-                if safe_upto > flushed:
-                    yield _sse("token", {"text": buffer[flushed:safe_upto]})
-                    flushed = safe_upto
+                    safe_upto = len(buffer) - safety_margin
+                    if safe_upto > flushed:
+                        yield _sse("token", {"text": buffer[flushed:safe_upto]})
+                        flushed = safe_upto
+    except httpx.HTTPError as exc:
+        # An exception here would otherwise kill the ASGI response mid-chunk: headers and
+        # some body already sent, then nothing — the client sees a broken chunked stream
+        # ("Response ended prematurely"), not the message on this exception. Ending the SSE
+        # stream on our own terms, with an honest error event, is what the frontend already
+        # has a display for.
+        yield _sse("error", {"message": f"The model did not answer: {exc}"})
+        return
 
     if not delimiter_seen and len(buffer) > flushed:
         yield _sse("token", {"text": buffer[flushed:]})

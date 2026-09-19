@@ -18,6 +18,16 @@ In a container: `docker compose up statement-extraction` from the repo root. It 
 the `ollama-pull` job, so the model is on disk before this runs, and the backend and
 frontend wait on it in turn.
 
+Each document gets its own JSON file under `documents/`, next to `STATEMENTS_FILE_PATH`
+(e.g. `documents/transcripts/07_2024-11-12_....json`), written as soon as that document is
+done — the run logs its path, so progress is visible while a slow model works through the
+corpus. `STATEMENTS_FILE_PATH` itself is these files concatenated, in doc-id order. This
+directory is scratch, not a second output: a successful run deletes it once the merge is
+written, so there is exactly one place a deleted person has to be removed from (CLAUDE.md
+rule 4). It only survives a run that never reached that point — an interrupted job, or one
+where every document came back empty — which is also when it's most useful for figuring out
+what happened.
+
 ## Configuration
 
 - `EXTRACTION_LLM_MODEL` — required. The Ollama model to extract with.
@@ -27,9 +37,9 @@ frontend wait on it in turn.
 - `CORPUS_DIR` — defaults to `input/`, baked into the image at build time (D18).
 - `STATEMENTS_FILE_PATH` — where the result is written, `/data/statements.json` in compose.
   Same variable name the backend reads: one name for the one artifact.
-- `EXTRACTION_BATCH_WORDS` — how many words of a document go in one model call. Defaults
-  to 300; raise it on a machine with a bigger context budget.
-- `EXTRACTION_NUM_CTX` — the context window passed to Ollama. Defaults to 8192.
+- `EXTRACTION_NUM_CTX` — the context window passed to Ollama. Defaults to 8192; a whole
+  document goes in one model call, so raise this if a document plus its statements will
+  not fit.
 - `EXTRACTION_TIMEOUT` — per-request timeout in seconds. Defaults to 600.
 
 These are deliberately separate from the backend's `LLM_BASE_URL`/`LLM_MODEL`: extraction

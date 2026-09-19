@@ -53,6 +53,42 @@ def test_a_run_that_finds_statements_writes_the_file_and_succeeds(job: Path):
     assert [s["document_id"] for s in written["statements"]] == ["transcripts/01_kickoff"]
 
 
+def test_a_documents_file_lands_before_the_next_document_is_asked_for(
+    job: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Progress has to be visible while a slow model is still working, not only once the
+    whole run is done — so 01_kickoff's file must exist by the time 02_other is asked for."""
+    other = job.parent / "corpus" / "transcripts" / "02_other.txt"
+    other.write_text(TRANSCRIPT, encoding="utf-8")
+    first_doc_file = job.parent / "documents" / "transcripts" / "01_kickoff.json"
+
+    def check_order(messages: list[dict[str, str]]) -> dict:
+        if "02_other" in messages[1]["content"]:
+            assert first_doc_file.exists()
+            written = json.loads(first_doc_file.read_text(encoding="utf-8"))
+            assert [s["document_id"] for s in written["statements"]] == ["transcripts/01_kickoff"]
+        return answer(messages)
+
+    monkeypatch.setattr(extract, "_ollama_chat", lambda *_: check_order)
+    assert extract.main([]) == 0
+
+
+def test_a_successful_run_cleans_up_the_per_document_files(job: Path):
+    assert extract.main([]) == 0
+    assert not (job.parent / "documents").exists()
+
+
+def test_a_run_that_finds_nothing_leaves_the_per_document_file_for_inspection(
+    job: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The merged file is never written in this all-empty case (see the next test), so the
+    per-document files are the only record of what actually ran — not cleaned up here."""
+    monkeypatch.setattr(extract, "_ollama_chat", lambda *_: lambda messages: {"statements": []})
+    assert extract.main([]) == 1
+    doc_file = job.parent / "documents" / "transcripts" / "01_kickoff.json"
+    assert json.loads(doc_file.read_text(encoding="utf-8")) == {"statements": []}
+
+
 def test_a_run_that_finds_nothing_fails_and_leaves_the_old_file_alone(
     job: Path, monkeypatch: pytest.MonkeyPatch
 ):

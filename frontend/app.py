@@ -9,7 +9,10 @@ import requests
 import streamlit as st
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
-REQUEST_TIMEOUT = 120
+# Read timeout: seconds of silence between chunks the backend forwards, not a cap on the
+# whole answer. Matches the backend's own LLM_TIMEOUT default (backend/README.md) so a
+# large, slow model isn't cut off here after the backend was configured to wait for it.
+REQUEST_TIMEOUT = float(os.environ.get("BACKEND_REQUEST_TIMEOUT", "600"))
 
 DOC_LABEL_RE = re.compile(r"^(.*?)-\d{4}-\d{2}-\d{2}$")
 
@@ -247,6 +250,8 @@ def stream_backend(question: str, result: dict) -> Iterator[str]:
                         yield text
                 elif event_type == "citations":
                     result["citations"] = payload.get("citations", [])
+                elif event_type == "error":
+                    result["error"] = payload.get("message", "The model did not answer.")
     except requests.HTTPError as exc:
         result["error"] = _http_error_message(exc)
     except requests.RequestException as exc:
