@@ -39,13 +39,41 @@ STYLE = """
      "Delete a person" button grew the header to 81px while the hero still subtracted a
      hard-coded 73px. */
   --header-height:72px;
+  /* The ambient wash, as the accent at very low alpha rather than a new blue, so it stays
+     in the palette. Alpha is the dial: above ~0.14 it stops reading as paper. */
+  --wash:rgba(22,104,165,0.07); --wash-strong:rgba(22,104,165,0.11);
   /* Light only, on purpose: .streamlit/config.toml pins Streamlit's own widgets to the same
      tokens, and this pins what the browser paints for us — form controls, scrollbars,
      autofill — so a dark-mode laptop cannot turn half the page dark (D48). */
   color-scheme:light;
 }
-html, body, .stApp{background:var(--bg) !important;color:var(--text);
+/* background-color, not the background shorthand: the shorthand also resets
+   background-image, which is what the wash below paints. */
+html, body, .stApp{background-color:var(--bg) !important;color:var(--text);
   font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;}
+/* Ambient wash: three very faint baby-blue blobs that drift and swell over the page. It
+   lives in .stApp's own background rather than an overlay element, so it paints behind
+   every component with no stacking context to manage and nothing to intercept clicks.
+   Fixed attachment keeps it still while a long answer scrolls past it. */
+.stApp{
+  background-image:
+    radial-gradient(closest-side, var(--wash-strong), transparent),
+    radial-gradient(closest-side, var(--wash), transparent),
+    radial-gradient(closest-side, var(--wash), transparent) !important;
+  background-repeat:no-repeat !important;
+  background-attachment:fixed !important;
+  animation:sc-breathe 26s ease-in-out infinite;}
+@keyframes sc-breathe{
+  0%, 100%{background-size:58% 62%, 46% 50%, 62% 56%;
+    background-position:16% 10%, 86% 22%, 62% 92%;}
+  50%{background-size:66% 70%, 53% 57%, 69% 63%;
+    background-position:22% 17%, 79% 15%, 55% 85%;}
+}
+/* Motion this slow is still motion; honour the system setting and keep the wash static. */
+@media (prefers-reduced-motion: reduce){
+  .stApp{animation:none !important;background-size:58% 62%, 46% 50%, 62% 56%;
+    background-position:16% 10%, 86% 22%, 62% 92%;}
+}
 /* stHeaderActionElements is the anchor-link icon Streamlit adds inside every heading. It is
    only painted on hover, but it sits in the line the whole time, so it was pushing the
    centred hero title 12px to the left of centre. */
@@ -168,6 +196,21 @@ button [data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:0 !impor
   color:var(--text-muted);}
 .sc-answer-text{margin:0;font-family:'IBM Plex Sans',sans-serif;font-size:17px;
   line-height:27px;color:var(--text);}
+/* The newest streamed fragment fades up out of a slight blur, so text arrives rather than
+   snapping in. Two names for one animation because Streamlit reuses the span between
+   reruns, and an animation only restarts when its name changes. No transform: it does
+   nothing on an inline box, and inline-block would break mid-sentence line wrapping. */
+/* Duration is tuned to the gap between chunks, not to taste: a fragment is promoted to
+   settled text on the next frame, so a fade slower than that gap gets cut off part-way and
+   snaps to full — a pop, which is the opposite of the point. Starting part-lit keeps what
+   is left of that step small. */
+.sc-stream-in-0{animation:sc-stream-a 0.16s ease-out;}
+.sc-stream-in-1{animation:sc-stream-b 0.16s ease-out;}
+@keyframes sc-stream-a{from{opacity:0.25;filter:blur(2px);}to{opacity:1;filter:blur(0);}}
+@keyframes sc-stream-b{from{opacity:0.25;filter:blur(2px);}to{opacity:1;filter:blur(0);}}
+@media (prefers-reduced-motion: reduce){
+  .sc-stream-in-0, .sc-stream-in-1{animation:none !important;}
+}
 /* Shown while we wait for the backend's first token. min-height matches .sc-answer-text's
    line-height so the card does not jump when the answer replaces this. */
 .sc-loading{display:flex;align-items:center;gap:10px;min-height:27px;}
@@ -281,6 +324,24 @@ def render_answer_html(answer: str) -> str:
         r"\[(\d+)\]",
         lambda m: f'<span class="sc-badge-inline">{m.group(1)}</span>',
         escaped,
+    )
+
+
+def render_streaming_html(answer: str, tail: str, frame: int) -> str:
+    """The answer so far, with only the newest chunk wrapped so it fades in.
+
+    Wrapping just the tail is what keeps this from flickering: the text already on screen
+    carries no animation and so repaints unchanged, and only the arriving fragment moves.
+    The class alternates because Streamlit reuses the element between reruns — a changing
+    animation-name is what makes the browser run it again."""
+    head = answer[: len(answer) - len(tail)]
+    # A citation marker split across the boundary would not match the badge pattern, so
+    # render the frame whole rather than flash a literal "[1]" mid-stream.
+    if "[" in tail or "]" in tail or head.count("[") != head.count("]"):
+        return f'<p class="sc-answer-text">{render_answer_html(answer)}</p>'
+    return (
+        f'<p class="sc-answer-text">{render_answer_html(head)}'
+        f'<span class="sc-stream-in-{frame % 2}">{render_answer_html(tail)}</span></p>'
     )
 
 
@@ -560,10 +621,10 @@ if not st.session_state.question:
                 answer_placeholder.markdown(LOADING_HTML, unsafe_allow_html=True)
                 result: dict = {}
                 answer = ""
-                for chunk in stream_backend(question, result):
+                for frame, chunk in enumerate(stream_backend(question, result)):
                     answer += chunk
                     answer_placeholder.markdown(
-                        f'<p class="sc-answer-text">{render_answer_html(answer)}</p>',
+                        render_streaming_html(answer, chunk, frame),
                         unsafe_allow_html=True,
                     )
         st.session_state.question = question

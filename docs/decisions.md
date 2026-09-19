@@ -1931,3 +1931,48 @@ and the exception is pinned to the same Streamlit `data-testid` D48's own *Cost*
 as upgrade-fragile. The lesson worth keeping is narrower than either rule: a global rule
 matched on a Streamlit `data-testid` will land on Streamlit's own widgets as well as on our
 components, and whether that is visible depends on something as small as a label's `display`.
+
+---
+
+## D52 — 2026-09-20 — Accepted
+**Two pieces of motion: an ambient baby-blue wash behind the page, and a fade on the newest
+streamed fragment so the answer arrives instead of snapping in. Both honour
+`prefers-reduced-motion`.**
+
+Asked for directly. Both are decoration, so the bar is that they cost nothing structural and
+can be turned off.
+
+- **The wash.** Three radial blobs of the accent at 7–11% alpha, drifting and swelling over
+  26s. It is painted as `.stApp`'s own `background-image`, not an overlay element: there is
+  no stacking context to manage, nothing to intercept clicks, and `background-attachment:
+  fixed` keeps it still while a long answer scrolls. The colour is `--accent` at low alpha
+  rather than a new blue, so it cannot drift out of the palette; alpha is the dial, and
+  above roughly 0.14 it stops reading as paper. This also meant changing the page's
+  `background` shorthand to `background-color` — the shorthand resets `background-image`,
+  which is the wash.
+
+- **The streamed fade.** Only the newest chunk is wrapped and animated; the text already on
+  screen carries no animation, so it repaints unchanged and only the leading edge moves.
+  Three things had to be true, none of them guessable from reading the code:
+  1. *The animation has to be able to restart.* Streamlit reuses the span between reruns,
+     and an animation only re-runs when its `animation-name` changes — so the class
+     alternates between two names for one effect. Verified by sampling computed opacity
+     through a stream: without this it fires once.
+  2. *Duration is set by the chunk cadence, not by taste.* A fragment is promoted to settled
+     text on the very next frame, so a fade slower than the gap between chunks gets cut off
+     part-way and snaps to full — a pop, the opposite of the point. The first attempt at
+     0.4s was measured mid-animation on every single sample (opacity never above 0.14).
+     0.16s starting at 25% lit leaves a step small enough to read as a soft edge.
+  3. *No transform.* It does nothing on an inline box, and `inline-block` would break
+     mid-sentence line wrapping — the same inline/inline-block distinction behind D51's
+     button-label bug.
+  A citation marker split across the head/tail boundary would not match the badge pattern,
+  so a frame whose split lands inside brackets renders whole and unanimated instead of
+  flashing a literal `[1]`.
+
+*Cost:* motion on a page that did not have any, and the wash is one more thing between the
+judges and plain white — if it reads as noise on a projector, the alpha tokens are the
+single place to turn it down, or to zero. The fade's timing is tuned against `DUMMY_LLM`'s
+pacing (D15); a real model streams slower, where each fragment simply completes its fade,
+which is the better-looking case. And the two `@keyframes` blocks are deliberate
+duplicates — one effect, two names — which looks like something to DRY up and must not be.
