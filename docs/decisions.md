@@ -760,3 +760,110 @@ for the run's duration — cosmetic, but two visibly different pages open at onc
 on the backend and this parser have to keep agreeing on the wire format, and nothing
 currently pins that beyond D15's dummy path and manual testing. If the frame format ever
 changes, both sides need updating together.
+
+---
+
+## D28 — 2026-09-19 — Accepted
+**The real extraction job is ported in from a teammate's parallel branch
+(`shah/extraction-pipeline`), adapted to this branch's names and contracts, rather than
+rewritten from scratch or merged wholesale.**
+
+`statement_extraction` was a placeholder — it started, served `/health`, and exited after a
+minute; nothing read the corpus or called a model. A teammate had, independently, already
+built the real thing against the same brief: corpus parsers for all three genres
+(`documents.py`), a verbatim-span matcher that only accepts a quote if it is actually in the
+unit, untouched (`matching.py`), per-document structured-output extraction against Ollama's
+native `/api/chat` (`extraction.py`), an agreement-linking pass that gives every `agreed_by`
+entry a receipt statement, and 62 tests — including tests that run the parsers against the
+real `input/` corpus and assert facts checked by hand (23/20/2 documents, the
+Sørensen/Sorensen spelling split, the three `Me`/`Them` internal transcripts).
+
+Rejected:
+- *Writing extraction fresh against this branch.* All of the above already exists, tested,
+  against our own corpus. Redoing it duplicates real work for no gain, and the parsing code
+  in particular — regex-driven, three date languages, doubled Teams timestamps — is exactly
+  the fiddly kind of code corpus.md warns is where the traps live.
+- *Merging the branch wholesale.* It restructures `compose.yaml` into separate
+  `compose.extraction.yaml`/`compose.gpu.yaml` files and rewrites `docs/decisions.md`
+  wholesale, renumbering everything from D23. Both conflict directly with D18–D27 as they
+  stand on this branch. A wholesale merge would have to resolve those by hand anyway, with
+  more surface area at risk than porting the application code alone.
+
+What was changed in the port, and why:
+- **Env var names.** The source branch read `EXTRACTION_MODEL`/`OLLAMA_HOST`/
+  `STATEMENTS_PATH`. This branch already documents `EXTRACTION_LLM_MODEL`/
+  `EXTRACTION_LLM_BASE_URL` (statement_extraction/README.md, D23) and `STATEMENTS_FILE_PATH`
+  (backend/README.md, config.py) — `extract.py` now reads those instead, so `compose.yaml`
+  did not need to change at all. `EXTRACTION_LLM_BASE_URL` carries `/v1` for the backend's
+  OpenAI-compatible path; this job calls Ollama's native API instead, so it strips the
+  suffix rather than asking compose to carry two URLs for one host.
+- **The prompt gained the placeholder trap.** data-model.md is explicit that a statement
+  must never be built from an attachment placeholder (four forms, including a bare `Image`
+  and a Swedish one), a signature block, or the synthetic-data banner. The ported prompt did
+  not mention any of this — nothing stopped the model turning `[Image removed by sender]`
+  into a report. Added one paragraph naming all four forms plus signature blocks and the
+  banner. Everything else in the prompt and schema (the `claim`/`handling` fields, the
+  agreement-linking pass) is carried over exactly.
+- **Location gained a `position` field; see D29.**
+- **The container runs the script directly instead of a FastAPI server; see D30.**
+
+*Cost:* the port was reviewed and adapted, not independently re-derived — correctness for
+the parts left unchanged (the regex parsing, the span matcher, the linking heuristic) rests
+on the source branch's own tests plus a fresh run of the full suite against this repo's
+`input/`, not on a second implementation to compare against. The `claim` and `handling`
+fields ride along in the written JSON unused by the backend today (Pydantic drops unknown
+fields); they cost nothing at rest, but they are surface area nobody has decided to build
+on, and a future entry should either give them a job or drop them.
+
+---
+
+## D29 — 2026-09-19 — Accepted *(extends D20's interim shape)*
+**`Location` gains an optional `position` field: the utterance offset for a transcript, or
+"message N of M" for an email thread or status report — D14's genre-specific pointer,
+nested inside `location`, not a sibling field.**
+
+D14 fixed what a citation's location has to carry — line range everywhere, plus a
+genre-specific pointer, because a thread's filename alone points at up to eighteen messages.
+D20's mock-file shape predates D14 and only has `page`/`line_start`/`line_end`; nothing
+wired the pointer through, so a real extraction run would have had it in hand and then
+dropped it before it reached a citation. Fixed now, as the real extraction job lands, by
+adding `position: str | None` to `backend/src/app/statements.py`'s `Location` model —
+`Citation` reuses `Location` directly, so the field reaches `/query` and the frontend
+without touching `schemas.py`. `frontend/app.py`'s `location_label()` appends it after the
+line range when present.
+
+Rejected: *a top-level `position` field on the statement*, which is what the ported
+extraction code did before this entry. D14 frames the pointer as part of "where in it," the
+same question the line range answers — a judge checking a citation should find both in one
+place, and a second top-level field is a second place the frontend has to remember to read.
+
+*Cost:* none identified — the field is optional, so the existing mock file and any statement
+without a meaningful position (nothing currently produces one outside extraction) validate
+unchanged.
+
+---
+
+## D30 — 2026-09-19 — Accepted
+**The extraction container's `CMD` runs `python -m src.app.extract` directly and exits. It
+no longer starts a FastAPI server.**
+
+The placeholder ran `fastapi run` and used a 60-second self-timer to exit 0, because D12
+needs the container to be a job — something compose can wait on with
+`service_completed_successfully` — and a FastAPI/uvicorn server does not exit on its own.
+architecture.md's stated reason for making extraction a service rather than a script was to
+support triggering re-extraction of a single document without a redeploy; that endpoint was
+never built, so the server was carrying a real dependency (`fastapi[standard]`,
+`uvicorn[standard]`) and a real bug shape (the self-timer) for a feature that does not exist.
+Running the extraction script as the container's command does exactly what D12 already
+committed to, with nothing standing in for a job that isn't one.
+
+Rejected: *keep the FastAPI wrapper and call the extraction job from its lifespan, then
+exit.* Works, but it is a web framework imported and installed for a process that serves no
+request, wrapping a call that would otherwise just be the entrypoint.
+
+*Cost:* the re-extraction-without-redeploy capability architecture.md described is further
+off than the placeholder made it look — building it now means reintroducing a server (or a
+separate trigger mechanism) on top of `extract.py`'s `main(filters)`, which already accepts
+document-id substrings for exactly this, just not over HTTP. Until then, re-running
+extraction means `docker compose up --build statement-extraction` or the local command in
+statement_extraction/README.md.

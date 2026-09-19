@@ -173,7 +173,11 @@ def location_label(location: dict) -> str:
     start = location.get("line_start")
     end = location.get("line_end")
     line_part = f"Line {start}" if start == end else f"Lines {start}–{end}"
-    return f"Page {page}, {line_part}" if page else line_part
+    label = f"Page {page}, {line_part}" if page else line_part
+    # D14's genre-specific pointer: the utterance offset for a transcript, or "message N of
+    # M" for an email thread or report — the actual "position in the conversation".
+    position = location.get("position")
+    return f"{label} · {position}" if position else label
 
 
 def date_label(iso_date: str) -> str:
