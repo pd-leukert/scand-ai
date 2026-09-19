@@ -50,7 +50,7 @@ def test_a_run_that_finds_statements_writes_the_file_and_succeeds(job: Path):
     assert extract.main([]) == 0
     written = json.loads(job.read_text(encoding="utf-8"))
     assert list(written) == ["statements"]
-    assert [s["doc_id"] for s in written["statements"]] == ["transcripts/01_kickoff"]
+    assert [s["document_id"] for s in written["statements"]] == ["transcripts/01_kickoff"]
 
 
 def test_a_run_that_finds_nothing_fails_and_leaves_the_old_file_alone(

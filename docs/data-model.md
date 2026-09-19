@@ -72,58 +72,61 @@ See [decisions.md](decisions.md) D3 for what we replace names with, and
 ## Draft record layout
 
 The statements file is one JSON object, `{"statements": [...]}`, with one entry per statement
-(D21). Draft: expect it to move after the
-first extraction run. Example, from `emails/07_op-id-field-exclusion.txt`:
+(D21). The field names are the answering backend's, so its loader reads the file as it is
+(D22). Example, from `emails/07_op-id-field-exclusion.txt`:
 
 ```json
 {
   "id": "emails/07_op-id-field-exclusion#3",
-  "doc_id": "emails/07_op-id-field-exclusion",
+  "document_id": "emails/07_op-id-field-exclusion",
   "doc_type": "email",
-  "doc_date": "2025-11-24",
-  "stated_on": "2025-11-24",
+  "location": {"page": null, "line_start": 40, "line_end": 40},
   "position": "message 2 of 4",
-  "lines": [40, 40],
-  "span": "I can purge the landing zone. I cannot purge the attachments.",
-  "claim": "Kwame Boateng can purge OP_ID from the landing zone but not from the emailed attachments.",
-  "act": "report",
+  "verbatim_span": "I can purge the landing zone. I cannot purge the attachments.",
+  "claim": "Kwame Boateng can purge OP_ID from the landing zone but not from the attachments.",
+  "speech_act": "report",
   "handling": "none",
-  "actor": {"name": "Kwame Boateng", "org": "RELEX", "role": "Technical Consultant", "label": null},
-  "agreed_by": []
+  "actor": {"name": "Kwame Boateng", "label": null, "organization": "RELEX", "role": "Technical Consultant"},
+  "agreed_by": [],
+  "statement_date": "2025-11-24",
+  "document_date": "2025-11-24"
 }
 ```
 
+The backend ignores the extra fields (`doc_type`, `position`, `claim`, `handling`, and `label` on
+a speaker). The code that writes the file is `statement_extraction/src/app/output.py`.
+
 Rules the layout encodes:
 
-- **The model returns the span; code derives the location.** `lines` and `position` are
+- **The model returns the span; code derives the location.** `location` and `position` are
   computed by finding the span in the source text, never taken from the model. A span that
   is not found verbatim (whitespace-normalised) drops the statement, which is logged. No
-  match means no citation, not an approximate one. The stored `span` is the source's own
-  text, not the model's copy (D17).
+  match means no citation, not an approximate one. The stored `verbatim_span` is the source's
+  own text, not the model's copy (D17).
 - **`position` is what a judge can see in the file.** Transcripts: the elapsed time on the segment line, as written (`1 minute 27 seconds`).
   Emails and reports: "message n of N", counted from the top of the file, so it can be
   checked by eye against the `Messages in thread` header. The three `INTERNAL`
   transcripts have no timestamps, so they use the line range only.
-- **`org` and `role` come from the document itself** — the attendee list, the header or the
-  signature — and are `null` when the document does not say. Never from another document,
-  and never from the model's own knowledge. This is what makes them role-as-of-then.
-- **Speakers the file does not name** get `actor.name` `null` and `actor.label` holding what
-  the file says: `Me` / `Them` in the `INTERNAL` transcripts, and `Unknown Speaker`,
-  `Guest 1` or a dial-in number in some Teams transcripts. The real speaker is not
-  recoverable and we do not guess.
+- **`organization` and `role` come from the document itself** — the attendee list, the header
+  or the signature. When no document says, they read `Not stated` (D22). Never from another
+  document, and never from the model's own knowledge. This is what makes them role-as-of-then.
+- **Speakers the file does not name** are shown by the label the file uses, in `actor.name`,
+  and `actor.label` is set so a label can be told from a real name: `Me` / `Them` in the
+  `INTERNAL` transcripts, and `Unknown Speaker`, `Guest 1` or a dial-in number in some Teams
+  transcripts. The real speaker is not recoverable and we do not guess.
 - **`agreed_by` lists who accepted a proposal or question**, found in a second pass (D20). Each
-  entry is `{name, label, statement}`, where `statement` is the id of the agreeing statement,
+  entry is a speaker, shaped like `actor`, plus `statement`: the id of the agreeing statement,
   so the agreement has its own receipt. Empty means no answer was found among the next eight
   statements by other people, which is a valid and useful answer but not proof that none exists.
 - **`handling` is `none`, `personal` or `confidential`** (D19), the model's judgement of
   whether the statement was meant to be private. It drives the flag the agent raises unasked.
-- **`claim` is a one-sentence restatement**, kept beside the verbatim `span` so the
+- **`claim` is a one-sentence restatement**, kept beside the `verbatim_span` so the
   answering model has the context that pronouns in the span lack.
-- **Dates are ISO 8601.** Source formats differ: reports use `06-04-2026` for 6 April and
+- **Dates are ISO 8601**, as `statement_date` and `document_date`. Source formats differ: reports use `06-04-2026` for 6 April and
   email headers use `Monday, November 24, 2025`. Code parses them, not the model.
 - **No status and no links** between statements (D4).
 
 Deletion has to sweep every string field a name can sit in: `actor.name`,
-`agreed_by[].name`, `span` and `claim`. A name is not always written as the attendee list
+`agreed_by[].name`, `verbatim_span` and `claim`. A name is not always written as the attendee list
 spells it: the corpus has `Henrik Sorensen` for `Henrik Sørensen`, and people also appear as
 email addresses (`k.boateng@…`) and as phone numbers in signatures.

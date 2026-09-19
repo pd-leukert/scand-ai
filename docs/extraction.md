@@ -43,11 +43,12 @@ so an agreement has a receipt too (D20).
 | `statement_extraction/src/app/documents.py` | Parsers: Teams transcripts, `INTERNAL` transcripts, email and report threads. Every line keeps its number in the file. |
 | `statement_extraction/src/app/matching.py` | `find_span`: finds a quote inside one unit, or returns nothing. |
 | `statement_extraction/src/app/extraction.py` | The prompt, the answer schema, batching, and all the keep-or-drop checks. |
-| `statement_extraction/src/app/extract.py` | The job: calls Ollama, runs the checks, writes `statements.json`. |
-| `statement_extraction/tests/` | 45 tests. Most use small fixtures. Some read the real corpus and skip if it is missing. |
+| `statement_extraction/src/app/output.py` | Turns each record into the shape the backend loads, just before writing. |
+| `statement_extraction/src/app/extract.py` | The job: calls Ollama, runs the checks, links agreements, writes `statements.json`. |
+| `statement_extraction/tests/` | 62 tests. Most use small fixtures. Some read the real corpus and skip if it is missing. |
 | `compose.extraction.yaml` | Adds Ollama, a model download step, the corpus mount and the real job command. |
 | `compose.gpu.yaml` | Gives the Ollama container the NVIDIA GPU. Use it on Verda only. |
-| `docs/decisions.md` | D14 to D19 are new; D7 and D13 are marked partly superseded. |
+| `docs/decisions.md` | D14 to D22 are new; D7 and D13 are marked partly superseded. |
 | `.gitignore`, `.dockerignore` | `corpus/` and `statements.json` are never committed or sent into an image. |
 
 `compose.yaml` is unchanged on purpose: `docker compose up` still starts the placeholder
@@ -58,25 +59,27 @@ extraction job, the backend and the frontend, so nobody working on those is bloc
 ```json
 {
   "id": "emails/07_op-id-field-exclusion#3",
-  "doc_id": "emails/07_op-id-field-exclusion",
+  "document_id": "emails/07_op-id-field-exclusion",
   "doc_type": "email",
-  "doc_date": "2025-11-24",
-  "stated_on": "2025-11-24",
+  "location": {"page": null, "line_start": 40, "line_end": 40},
   "position": "message 2 of 4",
-  "lines": [40, 40],
-  "span": "I can purge the landing zone. I cannot purge the attachments.",
+  "verbatim_span": "I can purge the landing zone. I cannot purge the attachments.",
   "claim": "Kwame Boateng can purge OP_ID from the landing zone but not from the attachments.",
-  "act": "report",
+  "speech_act": "report",
   "handling": "none",
-  "actor": {"name": "Kwame Boateng", "label": null, "org": "RELEX", "role": "Technical Consultant"},
-  "agreed_by": []
+  "actor": {"name": "Kwame Boateng", "label": null, "organization": "RELEX", "role": "Technical Consultant"},
+  "agreed_by": [],
+  "statement_date": "2025-11-24",
+  "document_date": "2025-11-24"
 }
 ```
 
-The full field list and the reasoning behind each field is in [data-model.md](data-model.md).
-`position` is what a person can find by eye in the file: a transcript's elapsed time,
-`message n of N` for threads, `line n` for the `INTERNAL` transcripts. Speakers the file does
-not name (`Me`, `Them`, `Guest 1`, a dial-in number) have `name: null` and the label in `label`.
+The field names are the answering backend's, so its loader reads the file as it is (D22). The full
+field list and the reasoning behind each field is in [data-model.md](data-model.md). `position` is
+what a person can find by eye in the file: a transcript's elapsed time, `message n of N` for
+threads, `line n` for the `INTERNAL` transcripts. A speaker the file does not name (`Me`, `Them`,
+`Guest 1`, a dial-in number) is shown by that label in `name`, with `label` set. An organisation
+or role no document states reads `Not stated`.
 
 ## Where each thing lives
 

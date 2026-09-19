@@ -196,9 +196,7 @@ def link_agreements(records: list[dict], chat: Chat) -> Counter[str]:
         elif answer["response"] == "accepted":
             counts["accepted"] += 1
             actor = source["actor"]
-            record["agreed_by"].append(
-                {"name": actor["name"], "label": actor["label"], "statement": source["id"]}
-            )
+            record["agreed_by"].append({**actor, "statement": source["id"]})
         else:
             counts["rejected"] += 1
     return counts

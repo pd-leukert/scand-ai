@@ -12,6 +12,7 @@ import httpx
 
 from .documents import load_corpus
 from .extraction import SCHEMA, Chat, extract_document, link_agreements
+from .output import to_statement
 
 
 def _ollama_chat(client: httpx.Client, model: str, num_ctx: int) -> Chat:
@@ -82,8 +83,10 @@ def main(filters: list[str]) -> int:
 
     # Written whole or not at all: a half-written file must never look like the record.
     tmp = out.with_name(out.name + ".tmp")
+    statements = [to_statement(record) for record in records]
     tmp.write_text(
-        json.dumps({"statements": records}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps({"statements": statements}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
     )
     os.replace(tmp, out)
     partial = f" (only {len(docs)} of {total} documents)" if len(docs) < total else ""

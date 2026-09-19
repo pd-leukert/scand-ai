@@ -44,7 +44,9 @@ def test_a_verified_response_fills_agreed_by_with_the_agreeing_statement():
     records = thread()
     counts = link_agreements(records, answering("accepted", "Nadia", "Confirmed. OP_ID is dropped"))
     assert counts == {"accepted": 1}
-    assert records[1]["agreed_by"] == [{"name": "Nadia", "label": None, "statement": "doc#1"}]
+    assert records[1]["agreed_by"] == [
+        {"name": "Nadia", "label": None, "org": None, "role": None, "statement": "doc#1"}
+    ]
     assert records[0]["agreed_by"] == []
 
 
@@ -101,7 +103,9 @@ def test_speakers_the_file_does_not_name_can_still_agree_by_label():
         record(20, None, "agreement", "Noted.", label="Me"),
     ]
     link_agreements(records, answering("accepted", "Me", "Noted."))
-    assert records[0]["agreed_by"] == [{"name": None, "label": "Me", "statement": "doc#20"}]
+    assert records[0]["agreed_by"] == [
+        {"name": None, "label": "Me", "org": None, "role": None, "statement": "doc#20"}
+    ]
 
 
 def test_reports_and_agreements_are_not_asked_about():

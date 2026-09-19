@@ -34,27 +34,27 @@ Nothing downstream has real data until the 45 documents are extracted. On a lapt
 ten hours; on a GPU it should be minutes to an hour. Check **Compute → Instances** in the Verda
 console, and ask the project owner before creating one: instances draw on a shared balance.
 
-### 2. Extraction and the backend disagree on the statements format
+### 2. Extraction and the backend format: matched on our side, two small things left
 
-They were written separately, and the backend's own doc calls its shape interim
-([D10 on `niek/backend`](decisions.md)). As they stand, the backend would reject extraction's file.
+The two were written separately, and the backend's own doc calls its shape interim
+([D10 on `niek/backend`](decisions.md)). Extraction now writes the backend's field names and file
+shape ([D21](decisions.md), [D22](decisions.md)). The backend's own loader reads real job output
+as it is, with no change on Niek's side. That was checked on a transcript with unnamed speakers, an
+email, a report, and an email with linked agreements.
 
-| | Extraction writes ([D15](decisions.md)) | Backend reads (`niek/backend`) |
-|---|---|---|
-| File | `statements.json`, one JSON object `{"statements": [...]}` | the same. This part matches since [D21](decisions.md) |
-| Path setting | `STATEMENTS_PATH` | `STATEMENTS_FILE_PATH` |
-| Document | `doc_id` | `document_id` |
-| Where | `lines: [a, b]` and `position` | `location: {page, line_start, line_end}`, no position |
-| Quote | `span` | `verbatim_span` |
-| Kind of statement | `act` | `speech_act` |
-| Speaker | `actor: {name, label, org, role}`, any may be null | `actor: {name, organization, role}`, all required strings |
-| Who agreed | `agreed_by`: a list of `{name, label, statement}`, where `statement` is the id of the agreeing statement ([D20](decisions.md)) | `agreed_by`: a list of actor objects |
-| Dates | `stated_on`, `doc_date` | `statement_date` (date and time), `document_date` |
-| Extra | `claim`, `handling`, `doc_type`, `position` | none |
+Two things are still open, and neither blocks anything:
 
-The nulls matter most. Speakers the archive does not name (`Me`, `Them`, `Guest 1`) have no name,
-organisation or role. In the test run every statement was like that, so a required `name` would
-make the backend fail on the whole file. The team has to pick one format and change one side.
+- **The path setting** is `STATEMENTS_PATH` in extraction and `STATEMENTS_FILE_PATH` in the
+  backend. Compose has to set both to the same file.
+- **Unknown values are text, not null.** The backend requires a name, organisation and role for
+  every speaker. A speaker the archive does not name is shown by the label the file uses ("Them",
+  "Guest 1"), with `label` set to tell it from a real name, and an organisation or role that no
+  document states reads `Not stated`. If Niek allows null, the conversion goes back to null in one
+  place, and the answering prompt should meanwhile read `Not stated` as no information.
+
+The backend ignores the extra fields (`position`, `claim`, `handling`, `doc_type`, `label`). The
+frontend can show `position`, for example "12 minutes 53 seconds", only if the backend passes it
+through in citations. That's a small change on his side.
 
 ### 3. The whole statements file probably does not fit in context
 
@@ -90,7 +90,7 @@ console. The working plan is a plain copy to the VM ([extraction.md](extraction.
 - [ ] Check the linking pass on transcripts, where replies are less clear than in an email
 - [ ] Full run on a GPU with the real model
 - [ ] Measure the statements file in tokens (blocker 3)
-- [ ] Agree one statements format with the backend (blocker 2)
+- [x] Write the backend's field names and file shape; its loader reads real output ([D21, D22](decisions.md))
 - [ ] Fold the compose layers into `compose.yaml` and replace the placeholder command
 - [ ] A check of each claim against its quote (claims can be wrong even when the quote is right)
 - [ ] The private-material flag ([D19](decisions.md), proposed) needs a bigger model to judge
@@ -98,7 +98,8 @@ console. The working plan is a plain copy to the VM ([extraction.md](extraction.
 ### Answering backend
 
 - [ ] Rebase `niek/backend` onto current `main`; renumber its decisions
-- [ ] Accept the real statements format (blocker 2)
+- [ ] Read `position` and `label` through into citations, so the frontend can show them (blocker 2)
+- [ ] Optional: allow a null speaker name, organisation and role, then ask extraction to switch back
 - [ ] Fit the statements in context, or retrieve them (blocker 3)
 - [ ] Point `LLM_BASE_URL` at Ollama on Verda and set `LLM_MODEL`
 - [ ] Try the practice questions P1 to P9 against real data
@@ -137,7 +138,7 @@ console. The working plan is a plain copy to the VM ([extraction.md](extraction.
 
 ## Decisions the team has to make
 
-1. **One statements format** for extraction and the backend (blocker 2).
+1. **Whether the backend allows null** for a speaker's name, organisation and role (blocker 2). Optional.
 2. **D2:** whole file in context, or retrieval or an index. The whiteboard shows RAG, which
    contradicts D2 as written.
 3. **D19:** whether flagging private statements is the unasked feature.

@@ -475,3 +475,37 @@ Rejected:
 unreadable rather than partly usable, which the write-then-rename already prevents. If the file
 ever grows too big to read whole, JSONL is the way back. The field names still differ from the
 backend's; see blocker 2 in [whats-left.md](whats-left.md).
+
+---
+
+## D22 — 2026-09-19 — Accepted
+**The statements file uses the backend's field names, and what the backend cannot hold is written as text. Supersedes the field names in the D15 layout.**
+
+`statement_extraction/src/app/output.py` converts each record just before the file is written:
+`doc_id` becomes `document_id`, `span` becomes `verbatim_span`, `act` becomes `speech_act`,
+`lines` becomes a `location` with `line_start` and `line_end`, and the dates become
+`statement_date` and `document_date`. The backend's own loader on `niek/backend` reads real
+output from the job as it is, with no change on Niek's side. That was checked on real runs: a
+transcript with unnamed speakers, an email, a report, and an email with linked agreements. The
+extra fields (`position`, `claim`, `handling`, `doc_type`, and a `label` on each speaker) ride
+along, and the loader ignores them. The extraction code keeps its own names; only the written
+file changes.
+
+The backend requires a name, an organisation and a role, as strings, for every speaker. Where the
+archive gives none: a speaker the file does not name is shown by the label the file uses ("Them",
+"Guest 1"), with `label` set so it can be told from a real name, and an organisation or role that
+no document states is `Not stated`.
+
+Rejected:
+- *Writing nulls.* Honest, and what D15 said, but the backend rejects the whole file on one until
+  its model changes.
+- *Waiting for the backend to change first.* It leaves the chain blocked on one reply, with the
+  deadline tomorrow.
+- *Renaming inside the extraction code.* Churn in the code and its tests for no gain: one function
+  at the boundary does it.
+
+*Cost:* a `name` can hold a label, and `Not stated` is a string a consumer could mistake for a
+fact. The answering prompt already says to use organisation and role as recorded, so it should
+read `Not stated` as no information. Once the backend accepts null, the conversion goes back to
+nulls in one place (`_actor`). Deletion also gets more places a name can sit: `name`, each
+`agreed_by` name, the quote and the claim.
