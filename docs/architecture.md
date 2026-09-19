@@ -1,15 +1,17 @@
 # Architecture
 
 MVP shape. Deliberately small: four moving parts, one of which only runs once.
-Technical detail (schemas, endpoints, file layouts) is intentionally absent until the
-dataset is in hand — see [decisions.md](decisions.md), D7.
+Technical detail (schemas, endpoints, file layouts) was deferred until the dataset was in
+hand (D7). It now is — what the documents actually look like is in
+[corpus.md](corpus.md) — so the contracts are unblocked and get written as they are built,
+not before.
 
 ## The shape
 
 ```
-   Verda file storage
+   the archive (input/)
    ┌──────────────────┐
-   │  45 source docs  │   PDFs and text files, read-only, never modified
+   │  45 source docs  │   plain text, read-only, never modified
    └────────┬─────────┘
             │  read once
             ▼
@@ -36,9 +38,19 @@ dataset is in hand — see [decisions.md](decisions.md), D7.
 
 ### 1. The pile — source documents
 
-Plain file storage on Verda. Read-only from the application's point of view: nothing in
-the running system writes to it. Keeping the corpus immutable is what lets us say
-precisely what our derived artifact was derived from.
+45 plain-text files: 23 Teams transcripts, 20 email threads, 2 status-report threads, no
+PDFs and no attachments. They live in [`input/`](../input/) and are described in
+[corpus.md](corpus.md).
+
+Read-only from the application's point of view: nothing in the running system writes to
+them. Keeping the corpus immutable is what lets us say precisely what our derived artifact
+was derived from.
+
+**How it reaches extraction:** baked into the extraction image at build time
+(`COPY input/ …`), not mounted and not fetched. The build context is already the repo root
+and `.dockerignore` does not exclude `input/`, so it is one line and no compose change.
+Changing a document means rebuilding the image, which is right for an archive that is
+fixed for the weekend. See D18, which supersedes D13's runtime-fetch clause.
 
 ### 2. statement_extraction — the one-shot job
 
@@ -69,6 +81,11 @@ The rule this service exists to enforce: **the model answers from the statements
 from its own knowledge.** A claim that cannot point at a statement, and through it at a
 document and a location, does not go in the answer.
 
+Location, concretely: a citation resolves to a line range, plus — for transcripts — the
+utterance offset the Teams export already carries (`1 minute 4 seconds`), which is the
+"position in the conversation" the brief asks for, and — for email threads — the one
+message within the thread. See D14.
+
 ### 4. frontend — Streamlit
 
 The URL we submit. Its job is to make the receipt visible: an answer is not a paragraph,
@@ -76,10 +93,33 @@ it is a paragraph whose claims can be expanded into the document, the location, 
 quoted line they came from. The judges check citations by hand, so the shortest path from
 a claim to its source passage is a scoring decision, not a UI nicety.
 
+## Residency
+
+The archive stays in the EU, and the brief scores us on saying where inference runs and
+how the documents get there. Our answer, in the four sentences the one-page design
+document needs:
+
+- **Where the documents live.** In the EU, on the Verda VM that runs the stack. They are
+  copied there once and never leave it.
+- **Where inference runs.** On the same VM, in a local Ollama container. Weights are
+  pulled once; prompts and documents do not leave the host.
+- **What we send to third parties.** Nothing. No external model APIs, no hosted embedding
+  service, no telemetry carrying document content.
+- **Where the deployment is.** An EU region — **which one is unconfirmed, and it blocks
+  the one-page design document** ([open-questions.md](open-questions.md), Q3). "It is
+  Verda" is not an answer to "where".
+
+This is the reason for the no-external-APIs rule in CLAUDE.md. It is not a preference; a
+single convenience call to a non-EU API costs the sovereignty marks outright, however good
+the answers are.
+
 ## Deployment
 
 One Verda VM, `docker compose`, three long-running containers (frontend, backend, Ollama)
-plus the extraction job run on demand. Streamlit exposed publicly over HTTPS; the backend
+plus the extraction job run on demand. **The URL goes up today** — stub backend or not —
+so that everything after is a redeploy into something that already works, and so that we
+do not need the brief's container-handover fallback, which had to be claimed on Saturday
+(D17). Streamlit exposed publicly over HTTPS; the backend
 and Ollama are not reachable from outside the compose network.
 
 Verda is the cloud for everything in this project — storage, compute, and the model host.
