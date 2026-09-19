@@ -488,3 +488,32 @@ streaming the raw model output straight through, which would put an unvalidated 
 marker in front of a judge before we've checked it resolves to anything real. The buffering
 keeps a safety margin equal to the delimiter's length so the delimiter can't leak a
 fragment of itself if it lands across two upstream chunks.
+
+---
+
+## D22 — 2026-09-19 — Accepted
+**The frontend is reached through Coolify's proxy, not a published host port. It declares
+`expose: 8501` and `SERVICE_FQDN_FRONTEND_8501`.**
+
+D17 committed us to submitting a URL, and the URL comes from Coolify's reverse proxy. The
+proxy needs to be told which service and which container port the domain belongs to; it
+does not infer that from a compose file. `ports: "8501:8501"` published Streamlit straight
+onto the VM's public interface and left the proxy with nothing to route, so the deployment
+came up healthy and the domain served nothing. `expose` keeps the port on the compose
+network, and the `SERVICE_FQDN_FRONTEND_8501` variable — passed through unset, filled in by
+Coolify — is what generates the route. The backend is unaffected: it was never published
+and still is not.
+
+Rejected:
+- *Keeping `ports` and assigning the domain in the Coolify UI.* Works, but the routing then
+  lives in a web form nobody else on the team can see, and the compose file in the repo
+  stops describing how the thing is actually reached. It also leaves 8501 open on the
+  public interface, bypassing TLS, for anyone who finds the IP.
+- *Publishing the port and submitting `http://<vm-ip>:8501` as the URL.* No TLS on a URL
+  judges will be asked to type, and a bare IP reads as unfinished.
+
+*Cost:* `docker compose up` on a laptop no longer serves the frontend on localhost:8501 —
+local work needs `docker compose run --service-ports frontend`, or running Streamlit
+outside the container as `frontend/README.md` already describes. And the deployment now
+depends on a Coolify-specific variable name, which is a lock-in we accept for the weekend;
+moving hosts means changing this block.
