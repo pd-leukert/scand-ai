@@ -1426,3 +1426,40 @@ with a known first name is taken for a person, which could add a false one and s
 name from being redacted; on this archive the only extra person it finds is Nadia Öberg. Nothing
 calls the function yet: the backend mounts the file read-only and extraction is the only writer, so
 how the demo triggers a deletion is still to be decided.
+
+---
+
+## D38 — 2026-09-19 — Accepted
+**Deletion is a command in `statement_extraction` that rewrites the statements file in place and prints the receipt. Extends D37.**
+
+`uv run python -m src.app.delete "Kwame Boateng" [--dry-run]`, next to `extract.py`. It reads and
+writes `STATEMENTS_FILE_PATH`, the file extraction writes, and reuses extraction's whole-or-nothing
+writer, so a crash cannot leave a half-written record. In compose the extraction container is the
+only one with the volume mounted read-write, so the file still has exactly one writer:
+`docker compose run --rm --no-deps statement-extraction uv run --frozen python -m src.app.delete "<name>"`.
+The receipt is printed to the terminal as JSON and stored nowhere, since it names the person
+(D37). Exit 0 means the file was rewritten (or a dry run printed a receipt), 1 means nobody
+matched and the file was left untouched, 2 means there is no file. If a `documents/` folder from
+an interrupted extraction run sits next to the file, the command says it still holds the name.
+
+Rejected:
+- *Keeping a copy of the file from before the deletion, so a wrong name can be undone.* The copy
+  is a second place the person survives (rule 4). A wrong name is undone by re-extracting, which
+  D3 already says not to do after a deletion.
+- *Writing the receipt to a log next to the file.* It would keep the deleted name in an
+  audit trail, which undoes the deletion.
+- *Making the backend do it.* It mounts the file read-only and holds only the answering path.
+  Where the demo's trigger lives is still an open team decision (`docs/deletion.md`); this command
+  is what any trigger would call, so it does not pre-empt that choice.
+- *Refusing a bare first name that could mean two people.* D37 already resolves it, to the person
+  with the most statements, and the receipt says who else it could have been. A refusal would make
+  "delete Nadia" unrunnable.
+- *Removing the leftover `documents/` folder from here.* It is extraction's scratch space, not
+  ours to delete; the command warns and leaves the call to whoever owns extraction.
+
+*Cost:* the rewrite cannot be undone, which is the point. The backend caches the file by path, so
+its answers keep the old names until it restarts; until that is settled a deletion is complete on
+disk but not yet in what a judge sees. The receipt exists only on the screen of whoever ran the
+command, so the demo has to show it there or the frontend has to be given it (docs/deletion.md,
+step 5). A second run of the same name finds nobody and exits 1, which is honest but reads as an
+error in a script.
