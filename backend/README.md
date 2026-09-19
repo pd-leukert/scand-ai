@@ -9,6 +9,9 @@ answer is that the record is silent. See [CLAUDE.md](../CLAUDE.md) rule 2 and
 
 Run with `uv run fastapi dev` from the `backend` folder.
 
+The file is read on every request and never cached, so a deletion (which rewrites it) shows up
+in the next answer with no restart ([D39](../docs/decisions.md)).
+
 ## Configuration
 
 `/query` calls an OpenAI-compatible chat-completions endpoint (Ollama in production, per

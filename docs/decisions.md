@@ -1429,7 +1429,7 @@ how the demo triggers a deletion is still to be decided.
 
 ---
 
-## D38 — 2026-09-19 — Accepted
+## D43 — 2026-09-19 — Accepted
 **Deletion is a command in `statement_extraction` that rewrites the statements file in place and prints the receipt. Extends D37.**
 
 `uv run python -m src.app.delete "Kwame Boateng" [--dry-run]`, next to `extract.py`. It reads and
@@ -1463,3 +1463,37 @@ disk but not yet in what a judge sees. The receipt exists only on the screen of 
 command, so the demo has to show it there or the frontend has to be given it (docs/deletion.md,
 step 5). A second run of the same name finds nobody and exits 1, which is honest but reads as an
 error in a script.
+
+---
+
+## D44 — 2026-09-19 — Accepted
+**The backend reads the statements file on every request and caches nothing. Closes the reload question D38 left open.**
+
+`load_statements` in `backend/src/app/statements.py` used `lru_cache`, so a running backend kept
+the file it first read. A deletion (D37, D38) rewrites the file on disk, and the backend went on
+answering with the old names until it restarted. It now reads and validates the file on each
+request. That costs 28 ms for 1,116 statements (1 MB), against seconds for the model call, and every
+request already re-serialises the whole file into the prompt (D2). The read is also explicitly
+UTF-8: the default on Windows is cp1252, which cannot decode "Öberg" or "Sørensen", so a local
+backend could not load a real file. The container was not affected. Checked against the running
+app: ask, delete Marco Rossi with the D38 command, ask again, with no restart. The name is gone,
+the placeholder is there, and all five citations still resolve.
+
+Rejected:
+- *Restarting the backend after each deletion* (`docker compose up --no-deps backend`, D12). No
+  code, but a manual step that fails silently: forget it and the answer still names the person,
+  which looks like the deletion did not work, on the slice the judges test directly. A trigger in
+  the UI would also need the container runtime's socket.
+- *A cache keyed on the file's modification time and size.* It keeps the cache, and a cache is a
+  copy of the derived artifact that deletion would have to reach (rule 4). The invalidation logic
+  is code to debug under time pressure, to save a parse that is cheaper than the rest of the request.
+- *A reload endpoint that the deletion command calls.* A new call between services, and state that
+  has to be kept in step with the file.
+
+*Cost:* each request pays the parse, about 28 ms per MB, which grows with the file; at ten times the
+statements it is still small next to the model call, and D2 already sets the ceiling where this
+design stops working. A request already running when the file is rewritten finishes with the old
+names, and the next one has the new. A file that is not valid now fails the request instead of
+serving an older copy, which is intended, and cannot happen from a half-written file because both
+extraction and deletion replace the file whole. This replaces the last cost line of D38, that the
+backend keeps the old names until it restarts.

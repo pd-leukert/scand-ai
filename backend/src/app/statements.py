@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime
-from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -68,19 +67,21 @@ class StatementsFile(BaseModel):
     documents: list[_DocumentBlock]
 
 
-@lru_cache
 def load_statements(path: str) -> dict[str, Statement]:
-    """Load the statements file once per process, flatten it to one Statement per line and
-    index by statement id.
+    """Read the statements file, flatten it to one Statement per line and index by
+    statement id.
 
     id is derived from the statement's position in its document's array —
     "<document id>#<position>", 1-indexed — the same scheme extraction.py uses internally
     to link agreements, just never written to the file since it is reconstructible for free.
 
-    Cached by path: the file is treated as static for the lifetime of the process, same as
-    D2 assumes for what goes into the model's context.
+    Read on every request, never cached: a cached copy is a second place a deleted person
+    survives, and deletion rewrites the file (D44). A rewrite is whole-or-nothing, so a request
+    sees the file from before it or after it, never half of each.
     """
-    parsed = StatementsFile.model_validate(json.loads(Path(path).read_text()))
+    parsed = StatementsFile.model_validate(
+        json.loads(Path(path).read_text(encoding="utf-8"))
+    )
     return {
         statement.id: statement
         for document in parsed.documents
