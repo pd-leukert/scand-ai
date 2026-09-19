@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from src.app.documents import Document, load_corpus, parse_document, parse_sent_date
 
-CORPUS = Path(os.environ.get("CORPUS_DIR", Path(__file__).parents[2] / "corpus"))
+CORPUS = Path(os.environ.get("CORPUS_DIR", Path(__file__).parents[2] / "input"))
 
 TEAMS = """*** SYNTHETIC DATA.
 Meeting: Kickoff

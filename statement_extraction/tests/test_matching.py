@@ -6,7 +6,7 @@ import pytest
 from src.app.documents import Document, Line, Unit, load_corpus
 from src.app.matching import find_span
 
-CORPUS = Path(os.environ.get("CORPUS_DIR", Path(__file__).parents[2] / "corpus"))
+CORPUS = Path(os.environ.get("CORPUS_DIR", Path(__file__).parents[2] / "input"))
 
 
 def unit(*lines: tuple[int, str, str]) -> Unit:

@@ -27,8 +27,9 @@ statement is *stale* when a later statement supersedes it, and *never-true* when
 statement says it was wrong when recorded. A date sort cannot tell those apart, which is
 why this is a reasoning pass and not a sort.
 
-This is the single highest-value thing we are not doing, and it is the first thing to
-build if the MVP lands early.
+This is the single highest-value thing we are not doing, and as of 2026-09-19 it is the
+team's agreed successor to the MVP rather than a maybe — the first thing built once the
+answering and deletion paths work. What it is *not* is a date heuristic. See D16.
 
 ### 2. Measured context ceiling, then a two-stage answer path
 
@@ -67,8 +68,21 @@ unreliable.
 not know it exists and will say the record is silent. We cannot distinguish "the documents
 do not say" from "our extraction did not catch it".
 
-**Unmeasured context ceiling.** The whole statements file goes into context. We do not yet
-know how close 45 documents put us to the limit.
+**Partly measured context ceiling.** The source corpus is ~363k characters — on the order
+of 90k tokens, which is why the brief says it fits in a long context window. What we do
+*not* know is the size of the statements file derived from it, and that is the number that
+decides whether D2 holds. Measure it the first time extraction runs.
+
+**Identity is resolved by a model, not by a registry.** One person appears under two
+spellings and two people share a first name, and until extension 3 below exists there is
+no canonical person record — only whatever extraction wrote on each statement. A missed
+variant is a person who is half-deleted. See D19.
+
+**Six transcripts have utterances we cannot attribute.** Three internal recordings label
+speakers `Me:` / `Them:` and three others contain `Unknown Speaker`. We report those as
+unknown. This is correct behaviour, but it means some real commitments in the archive are
+unattributable by us, and an answer about who agreed in an internal meeting may be
+"the record does not name the speaker" when a human reading the room could guess.
 
 **Attribution is only as good as the documents.** Where a transcript does not say who
 spoke, or an email thread is quoted without headers, the actor is unknown — and we would
@@ -76,7 +90,44 @@ rather report it unknown than guess.
 
 ## The thing it does unasked (15%)
 
-> **Proposed, pending the team's agreement — see [decisions.md](decisions.md) D19.**
+> **Still open as of 2026-09-19** — tracked as Q1 in
+> [open-questions.md](open-questions.md). What is written below is the shortlist and the
+> evidence, not a choice.
+
+The constraint, from the brief: it has to be genuinely unprompted, and it has to be
+**working in the deployed version** — a slide does not count. The brief offers four
+directions and says the archive supports all four:
+
+1. **Flag where the project has drifted** from what was actually agreed.
+2. **Brief someone joining on Monday** on what they need before their first meeting.
+3. **Notice a contradiction when a new document arrives** and say so at that moment.
+4. **Answer within what the asker is allowed to see** — the same question has different
+   correct answers for an account manager, an implementation consultant and someone from
+   the partner firm.
+
+What the archive actually supports, cheapest first:
+
+- **(4) is the best fit for what we already have.** Three transcripts are marked
+  `INTERNAL` and one `PARTNER`; the internal ones contain deal margin, a named retention
+  risk about an individual and candid talk about the customer's staff. A role switch in
+  the UI that changes which statements are in scope is a few hours' work on top of the
+  statements file, it demonstrates on stage in ten seconds, and it is *deletion-shaped*:
+  it is a property of the derived artifact, not a prompt instruction. The catch is that it
+  looks like query-time filtering, which is the thing the deletion slice punishes — so we
+  would have to be precise about why that is legitimate here and not there.
+- **(3) is the strongest story and the most work.** It needs ingestion of a new document
+  during the demo plus the reconciliation pass we have not built (extension 1). If
+  reconciliation lands early, this is the one that wins the slice.
+- **(2) is nearly free once answering works** — a fixed brief generated at startup — but
+  it is the least distinguishable from "a search engine with footnotes".
+- **(1) depends on reconciliation** as much as (3) does, without the demo moment.
+
+Whoever picks: write the entry in [decisions.md](decisions.md), update
+[demo.md](demo.md) step 4, and say what we rejected.
+
+### A fifth candidate, proposed: flag what was meant to be private
+
+> **Proposed, pending the team's agreement — see [decisions.md](decisions.md) D28.**
 
 The agent flags statements that were meant to be private. Extraction marks each statement
 `none`, `personal` or `confidential`: private details of someone's life, a speaker asking
@@ -85,7 +136,8 @@ on one, the agent says so without being asked, and shows the receipt.
 
 The archive earns this one. Its `INTERNAL` transcripts contain "do not put that in any shared
 document", terms given to another customer, and an executive's family circumstances — and a
-plain summariser repeats all of it.
+plain summariser repeats all of it. It uses only what is already in the statements file, so it
+adds no second derived artifact and nothing new for deletion to reach.
 
 Limits, stated plainly. The judgement is the model's, so it will miss some and over-flag
 others. A request that refers to something said earlier only works when both are in the same

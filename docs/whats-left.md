@@ -20,8 +20,8 @@ practice answers are produced from it.
 | Part | State | Who |
 |---|---|---|
 | Extraction (C1) | Built and tested. Verified in Docker on one transcript. The full corpus has not been run. Branch `shah/extraction-pipeline`. See [extraction.md](extraction.md). | Shah |
-| Answering backend | A real `POST /query` exists on branch `niek/backend`, not merged: it builds the prompt from the statements file and resolves citations in code from statement ids. Tried only against mock data. On `main` it is still a stub. | Niek |
-| Frontend | A placeholder page on `main`. No work is visible in the repo. | Andrea |
+| Answering backend | A real `POST /query` is on `main` (PR #7): it builds the prompt from the statements file and resolves citations in code from statement ids. Tried only against mock data. Its loader reads our output as it is. | Niek |
+| Frontend | A Streamlit chat UI is on `main` (PR #10), with a `DUMMY_LLM` test mode. Not yet run against real statements. | Andrea |
 | Docker, CI/CD, cloud | Compose is merged (PR #5). Nothing is visibly deployed and no Verda instance is known. | David |
 | Deletion | Not built. Nobody is named. | ? |
 | Practice answers and demo | Not started. | ? |
@@ -37,10 +37,11 @@ console, and ask the project owner before creating one: instances draw on a shar
 ### 2. Extraction and the backend format: matched on our side, two small things left
 
 The two were written separately, and the backend's own doc calls its shape interim
-([D10 on `niek/backend`](decisions.md)). Extraction now writes the backend's field names and file
-shape ([D21](decisions.md), [D22](decisions.md)). The backend's own loader reads real job output
+([D20](decisions.md)). Extraction now writes the backend's field names and file
+shape ([D30](decisions.md), [D31](decisions.md)). The backend's own loader reads real job output
 as it is, with no change on Niek's side. That was checked on a transcript with unnamed speakers, an
-email, a report, and an email with linked agreements.
+email, a report, and an email with linked agreements, and again against the loader on `main`
+after the merge.
 
 Two things are still open, and neither blocks anything:
 
@@ -67,15 +68,15 @@ real run. If it holds, D2 does not survive, and the two-stage answer in [roadmap
 or the whiteboard's RAG store is needed. Either way it needs a superseding decision, and any new
 store needs a deletion cascade (working agreement, rule 4).
 
-### 4. Decision numbers collide
+### 4. Decision numbers: settled in the merge
 
-`niek/backend` has its own D10 and D11, and `main` already has a different D10 (Python 3.12) and
-D11 (one Dockerfile per service). This branch adds D14 to D19. Whoever merges second renumbers.
+`main` already had D14 to D22, so this branch's decisions were renumbered to D23 to D31. Any new
+entry starts at D32.
 
-### 5. How the corpus reaches Verda is undefined
+### 5. How the corpus reaches Verda: settled by D18
 
-[D13](decisions.md) says "external shared storage", but no such storage is visible in the
-console. The working plan is a plain copy to the VM ([extraction.md](extraction.md)).
+`main` commits the archive as `input/` and copies it into the extraction image ([D18](decisions.md)),
+so it arrives with the code and nothing is uploaded. Extraction reads `input/` by default now.
 
 ## Checklist
 
@@ -85,19 +86,18 @@ console. The working plan is a plain copy to the VM ([extraction.md](extraction.
 - [x] Container verified in Docker on one transcript; every citation checked against the source
 - [ ] Commit and push the latest changes
 - [x] Run one email and one report through the job (67 statements, every citation checks out)
-- [x] Fill in who agreed with a second pass, with a receipt for each agreement ([D20](decisions.md))
+- [x] Fill in who agreed with a second pass, with a receipt for each agreement ([D29](decisions.md))
 - [ ] Fill in role and organisation from signatures: the model got only 9 of 21 in the email
 - [ ] Check the linking pass on transcripts, where replies are less clear than in an email
 - [ ] Full run on a GPU with the real model
 - [ ] Measure the statements file in tokens (blocker 3)
-- [x] Write the backend's field names and file shape; its loader reads real output ([D21, D22](decisions.md))
+- [x] Write the backend's field names and file shape; its loader reads real output ([D30, D31](decisions.md))
 - [ ] Fold the compose layers into `compose.yaml` and replace the placeholder command
 - [ ] A check of each claim against its quote (claims can be wrong even when the quote is right)
-- [ ] The private-material flag ([D19](decisions.md), proposed) needs a bigger model to judge
+- [ ] The private-material flag ([D28](decisions.md), proposed) needs a bigger model to judge
 
 ### Answering backend
 
-- [ ] Rebase `niek/backend` onto current `main`; renumber its decisions
 - [ ] Read `position` and `label` through into citations, so the frontend can show them (blocker 2)
 - [ ] Optional: allow a null speaker name, organisation and role, then ask extraction to switch back
 - [ ] Fit the statements in context, or retrieve them (blocker 3)
@@ -125,7 +125,7 @@ console. The working plan is a plain copy to the VM ([extraction.md](extraction.
 ### Deployment
 
 - [ ] A GPU instance with Docker and the NVIDIA container toolkit
-- [ ] Copy the corpus, run extraction, start the stack
+- [ ] Get the code on the VM, run extraction (the archive is in the image), start the stack
 - [ ] A public HTTPS URL for the frontend only; the backend and Ollama stay inside the compose network
 - [ ] Reachable from a device that is not ours
 
@@ -134,17 +134,15 @@ console. The working plan is a plain copy to the VM ([extraction.md](extraction.
 - [ ] Answers to the nine practice questions, with citations (two have no clean answer)
 - [ ] Someone who did not build it asks it three questions
 - [ ] The honest-limits list from [roadmap.md](roadmap.md), rehearsed
-- [ ] The thing it does unasked: D19 is proposed, the team has not agreed
+- [ ] The thing it does unasked: D28 is proposed, the team has not agreed
 
 ## Decisions the team has to make
 
 1. **Whether the backend allows null** for a speaker's name, organisation and role (blocker 2). Optional.
 2. **D2:** whole file in context, or retrieval or an index. The whiteboard shows RAG, which
    contradicts D2 as written.
-3. **D19:** whether flagging private statements is the unasked feature.
+3. **D28:** whether flagging private statements is the unasked feature.
 4. **Who builds deletion**, and where it runs.
-5. **How the corpus reaches Verda** (D13).
-6. **Decision numbering** when the branches merge.
 
 ## Not planned
 

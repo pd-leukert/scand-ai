@@ -217,7 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Source corpus (synthetic Acme archive): kept out of git, stored on Verda
+# A private copy of the archive, if you keep one outside input/ (the committed archive)
 corpus/
 
 # The derived statements file from a local run, never committed (D12)

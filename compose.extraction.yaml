@@ -2,7 +2,7 @@
 #   docker compose -f compose.yaml -f compose.extraction.yaml up
 # On a machine with an NVIDIA GPU, add: -f compose.gpu.yaml
 # The model comes from EXTRACTION_MODEL in the environment or a .env file. The source archive
-# goes in ./corpus next to this file. See docs/decisions.md D18.
+# is baked into the extraction image from input/ (D18). See docs/decisions.md D27.
 services:
   # The model host. Reachable from the compose network only.
   ollama:
@@ -38,9 +38,6 @@ services:
     environment:
       OLLAMA_HOST: http://ollama:11434
       EXTRACTION_MODEL: ${EXTRACTION_MODEL:-}
-      CORPUS_DIR: /corpus
-    volumes:
-      - ./corpus:/corpus:ro
 
 volumes:
   # Downloaded model weights. They survive `docker compose down`.

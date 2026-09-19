@@ -1,4 +1,8 @@
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+from .llm_client import answer_question, stream_answer_question
+from .schemas import QueryRequest, QueryResponse
 
 app = FastAPI(
     title="scand-ai backend",
@@ -6,16 +10,17 @@ app = FastAPI(
 )
 
 
-@app.get("/query")
-def query() -> dict[str, str]:
-    """Main query endpoint to query the AI environment."""
+@app.post("/query", response_model=None)
+async def query(request: QueryRequest) -> QueryResponse | StreamingResponse:
+    """Answer a question from the statements file only, with verified citations."""
+    if request.stream:
+        return StreamingResponse(
+            stream_answer_question(request.question),
+            media_type="text/event-stream",
+        )
+    return await answer_question(request.question)
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
-
-
-@app.get("/")
-def root() -> dict[str, str]:
-    return {"message": "Hello, world!"}

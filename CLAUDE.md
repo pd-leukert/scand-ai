@@ -5,9 +5,13 @@ For everyone working in this repo, human or coding agent. Short on purpose. Read
 
 ## What we are building
 
-An agent that answers questions about two years of rollout documents and can show its
-receipts. Read [README.md](README.md) and [docs/challenge.md](docs/challenge.md) first —
-most design questions are already answered there, and the rubric is what decides ties.
+An agent that answers questions about **two years** of rollout documents — 45 plain-text
+transcripts, email threads and status reports about a fictional customer — and can show
+its receipts. Read [README.md](README.md) and [docs/challenge.md](docs/challenge.md)
+first — most design questions are already answered there, and the rubric is what decides
+ties. Before touching anything that reads a document, read
+[docs/corpus.md](docs/corpus.md): the archive is deliberately messy and the traps in it
+are specific.
 
 ## Rules that protect the score
 
@@ -24,7 +28,10 @@ These are not style preferences. Breaking one of them costs us a scoring slice.
 3. **Deletion changes the derived artifact.** Never implement deletion as a filter applied
    at query time, or as a prompt instruction telling the model to avoid a name. The judges
    test precisely this. And redaction includes the verbatim spans, not just the actor
-   fields — the span is the one place we are guaranteed to show a judge.
+   fields — the span is the one place we are guaranteed to show a judge. **A person is not
+   a string:** the archive holds one person spelled two ways and two people sharing a
+   first name, so deletion resolves an identity first and its receipt says which person it
+   resolved to (D19).
 4. **Do not add a second derived artifact without making deletion cascade to it.** Caches,
    embeddings, indexes, pre-computed summaries: each is a new place a deleted person
    survives. Adding one and wiring deletion into it is a single piece of work, not two.
@@ -39,7 +46,9 @@ These are not style preferences. Breaking one of them costs us a scoring slice.
   `uv run`, `uv add`. Not pip, not poetry, not a hand-rolled venv. Lockfiles are committed.
 - One container per service, `docker compose` on a single Verda VM.
 - **Verda is the cloud for everything.** No external model APIs — inference is local
-  Ollama, always.
+  Ollama, always. This is the EU-residency requirement, which is scored: the archive and
+  every prompt derived from it stay on an EU host. One convenient call to a non-EU API
+  costs the sovereignty marks outright.
 - The model is a configuration value. Never hardcode a model name outside configuration,
   and never assume extraction and answering use the same one.
 

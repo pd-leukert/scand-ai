@@ -7,7 +7,7 @@ extraction box in that picture, opened up.
 
 ## In one paragraph
 
-The extraction job reads the 45 documents in `corpus/`, splits each into speaker turns and
+The extraction job reads the 45 documents in `input/`, splits each into speaker turns and
 email messages, asks a local LLM (Ollama) to pull out the statements in each one, and keeps a
 statement only if its quoted words really appear in the turn or message it came from. The
 result is one file, `statements.json`: a list of statements, each with the document, the
@@ -17,7 +17,7 @@ Nothing here calls an outside model API, and nothing in it runs when a user asks
 ## How it works
 
 ```
-corpus/*.txt ──► documents.py ──► extraction.py ──► matching.py ──► extract.py
+input/*.txt  ──► documents.py ──► extraction.py ──► matching.py ──► extract.py
  45 files        turns and         asks the model     keeps a          writes
  (read-only)     messages, with    for statements     statement only   statements.json
                  line numbers      (Ollama)           if its quote     (all or nothing)
@@ -34,13 +34,13 @@ document. So a citation in the output always points at real text.
 A second pass then fills in **who agreed**. For each proposal or question it shows the model the
 next few statements by other people and asks whether one accepted it. The link is kept only if
 the named person's statement contains the quoted words, and it records the id of that statement,
-so an agreement has a receipt too (D20).
+so an agreement has a receipt too (D29).
 
 ## How the documents are chunked
 
 There are two steps, and neither cuts through the middle of a speaker's turn.
 
-**1. Split each file into units** (`documents.py`, [D16](decisions.md)). A unit is the smallest
+**1. Split each file into units** (`documents.py`, [D25](decisions.md)). A unit is the smallest
 piece a statement can come from, and a statement never spans two units. Each line in a unit keeps
 its own line number from the file, which is where the citation's location comes from later.
 
@@ -53,7 +53,7 @@ its own line number from the file, which is where the citation's location comes 
 Lines are split on `\n` only, not with `splitlines()`, so the numbers match what an editor shows.
 Blank lines and the external-sender banner are not kept.
 
-**2. Group units into batches for the model** (`_batches` in `extraction.py`, [D18](decisions.md)).
+**2. Group units into batches for the model** (`_batches` in `extraction.py`, [D27](decisions.md)).
 Units are taken in order and their words are added up. When the next unit would push the batch past
 `EXTRACTION_BATCH_WORDS` (default 300), the batch is closed and a new one starts. So:
 
@@ -70,7 +70,7 @@ Units are taken in order and their words are added up. When the next unit would 
 ### Why chunk instead of sending everything to the model
 
 - **The model lost coverage on long input.** At 1000 words the 4B model stopped covering the
-  document part way through. Small models do better on short passages (D18).
+  document part way through. Small models do better on short passages (D27).
 - **The output is large.** The corpus is about 58,600 words and should give roughly 2,000 to 3,600
   statements. One answer cannot hold that many, and a long JSON answer is more likely to break or
   cut off. Even one long document produces a lot.
@@ -87,7 +87,7 @@ document twice, with `EXTRACTION_BATCH_WORDS=300` and then `1000` with `EXTRACTI
 (for example `16384`), and compare the kept and dropped counts in the log. If the larger batch is
 at least as good, switch to it and add a short entry to [decisions.md](decisions.md).
 
-The agreement pass (D20) does not use batches. It looks at each proposal or question and the next
+The agreement pass (D29) does not use batches. It looks at each proposal or question and the next
 eight statements by other people in the same document.
 
 ## What is in the branch
@@ -99,11 +99,12 @@ eight statements by other people in the same document.
 | `statement_extraction/src/app/extraction.py` | The prompt, the answer schema, batching, and all the keep-or-drop checks. |
 | `statement_extraction/src/app/output.py` | Turns each record into the shape the backend loads, just before writing. |
 | `statement_extraction/src/app/extract.py` | The job: calls Ollama, runs the checks, links agreements, writes `statements.json`. |
-| `statement_extraction/tests/` | 62 tests. Most use small fixtures. Some read the real corpus and skip if it is missing. |
-| `compose.extraction.yaml` | Adds Ollama, a model download step, the corpus mount and the real job command. |
+| `statement_extraction/tests/` | 62 tests. Most use small fixtures. Some read the archive in `input/`. |
+| `compose.extraction.yaml` | Adds Ollama, a model download step and the real job command. |
 | `compose.gpu.yaml` | Gives the Ollama container the NVIDIA GPU. Use it on Verda only. |
-| `docs/decisions.md` | D14 to D22 are new; D7 and D13 are marked partly superseded. |
-| `.gitignore`, `.dockerignore` | `corpus/` and `statements.json` are never committed or sent into an image. |
+| `docs/decisions.md` | D23 to D31 are new (main already had D14 to D22); D13 is marked partly superseded. |
+| `statement_extraction/Dockerfile` | Sets `STATEMENTS_PATH` and copies `input/` into the image (D18). The command is still the placeholder. |
+| `.gitignore` | `statements.json` is never committed, and neither is a private `corpus/` copy of the archive. |
 
 `compose.yaml` is unchanged on purpose: `docker compose up` still starts the placeholder
 extraction job, the backend and the frontend, so nobody working on those is blocked.
@@ -128,7 +129,7 @@ extraction job, the backend and the frontend, so nobody working on those is bloc
 }
 ```
 
-The field names are the answering backend's, so its loader reads the file as it is (D22). The full
+The field names are the answering backend's, so its loader reads the file as it is (D31). The full
 field list and the reasoning behind each field is in [data-model.md](data-model.md). `position` is
 what a person can find by eye in the file: a transcript's elapsed time, `message n of N` for
 threads, `line n` for the `INTERNAL` transcripts. A speaker the file does not name (`Me`, `Them`,
@@ -139,12 +140,12 @@ or role no document states reads `Not stated`.
 
 | Data | On your laptop | On Verda |
 |---|---|---|
-| The 45 source documents | `corpus/` at the repo root. Gitignored, so each person copies it in. | `corpus/` in the repo folder on the VM, mounted read-only into the extraction container. |
+| The 45 source documents | `input/` at the repo root. It is committed (D18), so it comes with the code. | Copied into the extraction image when you build it (D18). Nothing to upload. |
 | Downloaded model weights | Ollama's own folder (native install), or the `ollama` Docker volume. | The `ollama` Docker volume on the VM disk. |
 | The statements file | `statements.json` in the folder you ran from, or in the `statements` Docker volume. | The `statements` Docker volume, at `/data/statements.json`. |
 
 Everything stays on infrastructure we control. The Ollama container is not published outside the
-compose network, and the code has no path to any outside model API (D14).
+compose network, and the code has no path to any outside model API (D23).
 
 ### Where to find the generated file
 
@@ -167,7 +168,7 @@ To copy the file out of the volume, see [Getting the result out](#getting-the-re
 
 ## Run it on your laptop
 
-You need `uv`, and either native Ollama or Docker. The corpus goes in `corpus/`. Start with the
+You need `uv`, and either native Ollama or Docker. The archive is already in `input/`. Start with the
 tests, which do not need a model:
 
 ```
@@ -217,12 +218,12 @@ frontend until it finishes, which takes many hours without a GPU.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `EXTRACTION_MODEL` | none, required | The Ollama model name. Never written into code (D14). |
+| `EXTRACTION_MODEL` | none, required | The Ollama model name. Never written into code (D23). |
 | `OLLAMA_HOST` | `http://localhost:11434` | Where Ollama is. Compose sets `http://ollama:11434`. |
 | `EXTRACTION_BATCH_WORDS` | `300` | Units per model call, by word count. Smaller is more reliable (see below). |
 | `EXTRACTION_NUM_CTX` | `8192` | Context window asked of Ollama. |
 | `EXTRACTION_TIMEOUT` | `600` | Seconds to wait for one model call. |
-| `CORPUS_DIR` | `corpus/` at the repo root | Where the documents are. Compose sets `/corpus`. |
+| `CORPUS_DIR` | `input/` at the repo root | Where the documents are. In the image they are at `/app/input`, so compose sets nothing. |
 | `STATEMENTS_PATH` | `statements.json` | Where the result is written. The image sets `/data/statements.json`. |
 
 ## Run it on Verda
@@ -241,7 +242,7 @@ before creating one: instances draw on a shared balance.
 3. **Get the code:**
    `git clone https://github.com/pd-leukert/scand-ai.git && cd scand-ai && git checkout shah/extraction-pipeline`
    (after the merge, stay on `main`).
-4. **Upload the corpus** from your machine: `scp -r corpus <user>@<vm-ip>:~/scand-ai/corpus`
+4. **Nothing to upload.** The archive is `input/` in the repo and the build copies it into the image.
 5. **Choose the model.** Run `cp .env.example .env` in the repo folder on the VM and set
    `EXTRACTION_MODEL` in it to the exact Ollama tag. Pick the largest model that fits the GPU's
    memory. Ollama's site lists sizes.
@@ -297,7 +298,7 @@ the commands are the same, on `main`.
 Nothing about how to run it changes. `compose.yaml` stays the base and still starts the
 placeholder job, so the extraction layer has to be named on the command line. Folding the layer
 into `compose.yaml`, and replacing the placeholder command with the real job, should happen
-once extraction has run for real (D18).
+once extraction has run for real (D27).
 
 ## What we learned
 
@@ -313,12 +314,12 @@ once extraction has run for real (D18).
   quote check, which is what the check is for.
 - **Batch size matters.** With a 1000-word batch, 4B and the newer prompt kept 22 statements and
   stopped covering the document part way through. With 300-word batches it kept 48 in the same
-  time. So the default is 300 (D18).
+  time. So the default is 300 (D27).
 - **Thinking models need thinking turned off.** Otherwise a model can spend its whole budget
   reasoning and return nothing. The job sends `think: false`.
 - **A claim can be wrong even when the quote is right.** The claim is the model's own sentence.
   We saw one that inverted the speaker and one that added a currency symbol. The quote is the
-  receipt; the claim is not checked (D17). A check of claims against quotes is a good next step.
+  receipt; the claim is not checked (D26). A check of claims against quotes is a good next step.
 - **Speed.** About 14 minutes for this one small document on a laptop. The whole corpus on the
   same laptop would take well over ten hours, so the real run needs a GPU.
 
@@ -330,7 +331,7 @@ once extraction has run for real (D18).
 - Dates come as `06-04-2026` in reports (6 April) and as `Monday, November 24, 2025` in email
   headers, so the parser converts them to ISO dates.
 - There is a storyline about health information in the notes (emails 04 and 06, transcripts 01,
-  17 and 21). It is why D19 proposes flagging private statements.
+  17 and 21). It is why D28 proposes flagging private statements.
 
 ## Known limits, and what is next
 
@@ -342,7 +343,7 @@ The team-wide list of what is left, with owners and blockers, is in [whats-left.
   9 of 21 email statements, and it never linked an agreement until the second pass was added.
 - **The full run is blocked on a GPU.** Until it exists there is no `statements.json` for the
   backend to use.
-- **The private-material flag (`handling`, D19) is not reliable at 4B.** It found an explicit
+- **The private-material flag (`handling`, D28) is not reliable at 4B.** It found an explicit
   request not to share something and the statement it referred to, but missed the most blatant
   personal detail and wrongly flagged two work remarks. The design is to require the model to
   quote its reason and check the quote in code; it needs a bigger model to judge.
@@ -354,6 +355,6 @@ The team-wide list of what is left, with owners and blockers, is in [whats-left.
 
 ## Decisions to read
 
-D14 commercial APIs only in development · D15 the record layout · D16 parsing into turns and
-messages · D17 quote matching · D18 Ollama over HTTP and the compose layers · D19 the unasked
+D23 commercial APIs only in development · D24 the record layout · D25 parsing into turns and
+messages · D26 quote matching · D27 Ollama over HTTP and the compose layers · D28 the unasked
 feature (proposed). All in [decisions.md](decisions.md).

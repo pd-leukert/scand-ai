@@ -2,7 +2,7 @@ NOT_STATED = "Not stated"
 
 
 def to_statement(record: dict) -> dict:
-    """The record as the answering backend loads it (D22). Extra fields ride along."""
+    """The record as the answering backend loads it (D31). Extra fields ride along."""
     first, last = record["lines"]
     return {
         "id": record["id"],

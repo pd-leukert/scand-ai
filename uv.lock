@@ -92,12 +92,14 @@ version = "0.1.0"
 source = { virtual = "backend" }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.141.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
 ]
 
@@ -469,11 +471,15 @@ name = "frontend"
 version = "0.1.0"
 source = { virtual = "frontend" }
 dependencies = [
+    { name = "requests" },
     { name = "streamlit" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "streamlit", specifier = ">=1.64.0" }]
+requires-dist = [
+    { name = "requests", specifier = ">=2.34.2" },
+    { name = "streamlit", specifier = ">=1.64.0" },
+]
 
 [[package]]
 name = "h11"

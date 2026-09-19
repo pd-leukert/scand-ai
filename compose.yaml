@@ -48,8 +48,12 @@ services:
         condition: service_completed_successfully
       backend:
         condition: service_healthy
-    ports:
-      - "8501:8501"
+    # Reached through Coolify's proxy, not through a host port — the FQDN variable below
+    # is what tells the proxy this service on this port gets the domain. See D22.
+    expose:
+      - "8501"
+    environment:
+      - SERVICE_FQDN_FRONTEND_8501
     restart: unless-stopped
 
 volumes:

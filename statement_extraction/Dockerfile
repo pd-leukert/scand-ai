@@ -17,6 +17,9 @@ RUN uv sync --locked --package statement-extraction --no-install-workspace
 
 COPY statement_extraction/ statement_extraction/
 
+# The archive is baked into the image, so the job needs nothing mounted. See docs/decisions.md D18.
+COPY input/ input/
+
 # Where this job writes the statements file. It is the only writer.
 ENV STATEMENTS_PATH=/data/statements.json
 
