@@ -36,7 +36,7 @@ Run with `uv run fastapi dev` from the `backend` folder
 
 In a container: `docker compose up backend` from the repo root. Compose sets both required
 variables for you — `LLM_BASE_URL` points at the `ollama` service and `LLM_MODEL` defaults
-to `qwen3.8:27b-mtp-bf16`, overridable from the environment. It runs statement extraction
+to `qwen3:0.6b`, overridable from the environment. It runs statement extraction
 and the model pull first, and starts this service only once both jobs have exited. See
 [decision D23](../docs/decisions.md).
 

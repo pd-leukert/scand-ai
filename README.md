@@ -112,10 +112,11 @@ finished and exited. The UI is then on <http://localhost:8501>. The backend is n
 published — it is reachable from inside the compose network only, which is what
 [architecture.md](docs/architecture.md) asks for.
 
-Ollama runs as a fourth container on the same VM, with all GPUs reserved. A one-shot
-`ollama-pull` job downloads the model into a named volume before extraction or the backend
-start, so the first question can never hit a missing model; a re-pull of a model that is
-already there is a no-op, so only the first run is slow. Both models are configuration —
+Ollama runs as a fourth container on the same VM, on the GPU only when
+`OLLAMA_RUNTIME=nvidia` is set. A one-shot `ollama-pull` job downloads the model into the
+model store (a named volume on a laptop, the `OLLAMA_DATA_DIR` bind on the VM) before
+extraction or the backend start, so the first question can never hit a missing model; a
+re-pull of a model that is already there is a no-op, so only the first run is slow. Both models are configuration —
 `LLM_MODEL` for answering, `EXTRACTION_LLM_MODEL` for extraction, the latter defaulting to
 the former. See [decision D23](docs/decisions.md) for the Ollama service and
 [D25](docs/decisions.md) for the laptop/VM switch.

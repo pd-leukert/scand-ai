@@ -41,3 +41,10 @@ assume otherwise. See [decision D23](../docs/decisions.md).
 `uv run --frozen pytest` from this folder. Most tests are pure parsing/matching logic and
 need nothing running; a few skip unless `input/` (or `CORPUS_DIR`) points at the real
 archive, which it does by default when run from a checkout.
+Compose passes `EXTRACTION_LLM_BASE_URL` (the `ollama` service) and `EXTRACTION_LLM_MODEL`
+(default `qwen3:0.6b`, the laptop model — the VM overrides it, see
+[D25](../docs/decisions.md)). These are deliberately separate from the backend's
+`LLM_BASE_URL`/`LLM_MODEL`: extraction and answering are allowed to use different models,
+and the working agreement says never to assume otherwise. See
+[decision D23](../docs/decisions.md). Nothing reads them yet — the real extraction pass
+does.
