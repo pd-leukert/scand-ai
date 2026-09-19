@@ -1061,47 +1061,6 @@ an earlier failed attempt, not as current.
 ---
 
 ## D36 — 2026-09-19 — Accepted
-<<<<<<< Updated upstream
-**Fixes a production crash: `EXTRACTION_NUM_CTX`'s default raised 8192 → 32768, and one
-document's malformed model response no longer takes down the whole extraction run.**
-
-Reported symptom: the extraction container crashed with an unhandled
-`json.decoder.JSONDecodeError: Unterminated string`, in `_ollama_chat`'s
-`json.loads(response.json()["message"]["content"])`. Root cause: D31 removed the ~300-word
-chunker and started sending a whole document to the model in one call, on the reasoning
-that every document in this corpus is small enough to fit — true for the input side, but
-D31's own cost note already flagged the output side as unchecked: a document with many
-statements needs a correspondingly long schema-constrained JSON response, and input plus
-output both draw from the same `num_ctx` budget. Once that budget runs out mid-generation,
-Ollama stops — not with an error, just a response cut off wherever it was, which is exactly
-what "unterminated string" is: valid JSON up to the point the token budget ended, then
-nothing.
-
-Two changes, addressing both what happened and what should happen next time it does:
-- `EXTRACTION_NUM_CTX`'s default is 32768, not 8192 — four times the headroom, comfortably
-  covering the corpus's largest document (~3,300 words) plus a generous statement count,
-  without requiring exotic extended-context support from the model.
-- `main()`'s per-document loop now wraps `extract_document`/`link_agreements` in
-  `try/except (httpx.HTTPError, json.JSONDecodeError)`. A failure is treated exactly like a
-  document that legitimately produced nothing: logged, added to `empty`, given an empty
-  `documents/<doc_id>.json` (D35), and the job moves on. The run still fails overall (same
-  "a document with no statements is a silent gap" exit-1 path already in place) — this
-  isn't hiding the failure, it's refusing to let one bad response erase every other
-  document's completed work in the same run.
-
-Rejected: *raising `num_ctx` alone, without the try/except.* Reduces how often this
-happens but doesn't change what happens when it still does — some document, some model,
-some day, produces more output than any finite budget holds, and D35's whole premise (a
-crash shouldn't cost you the documents already done) was only half-built without also
-covering documents *not yet reached* when the crash happens.
-
-*Cost:* a document that fails this way now silently contributes zero statements to the
-final file rather than stopping the run for a human to look at — the same tradeoff D31 and
-D35 already accepted for other empty-document cases, extended to a new cause of emptiness.
-The stderr line (`"{doc_id}: extraction call failed (...)"`) is what distinguishes "the
-model genuinely found nothing" from "the call broke" in the log; nothing enforces that
-distinction downstream, since both feed the same `empty` list and the same exit code.
-=======
 **The statements file groups statements under their document. `document_id`, `document_type`,
 `document_date`, the people involved and a document summary are carried once per document,
 not once per statement — `id`, `document_id` and `document_date` are no longer written on
@@ -1262,4 +1221,167 @@ Rejected:
 - *Renaming `Citation` or its fields to signal it is no longer a verified quote.* Not done —
   out of scope for a schema-shape change and not requested; the cost above is recorded here
   instead of encoded in a new name.
->>>>>>> Stashed changes
+
+---
+
+## D38 — 2026-09-19 — Accepted
+**Fixes a production crash: `EXTRACTION_NUM_CTX`'s default raised 8192 → 32768, and one
+document's malformed model response no longer takes down the whole extraction run.**
+
+Reported symptom: the extraction container crashed with an unhandled
+`json.decoder.JSONDecodeError: Unterminated string`, in `_ollama_chat`'s
+`json.loads(response.json()["message"]["content"])`. Root cause: D31 removed the ~300-word
+chunker and started sending a whole document to the model in one call, on the reasoning
+that every document in this corpus is small enough to fit — true for the input side, but
+D31's own cost note already flagged the output side as unchecked: a document with many
+statements needs a correspondingly long schema-constrained JSON response, and input plus
+output both draw from the same `num_ctx` budget. Once that budget runs out mid-generation,
+Ollama stops — not with an error, just a response cut off wherever it was, which is exactly
+what "unterminated string" is: valid JSON up to the point the token budget ended, then
+nothing.
+
+Two changes, addressing both what happened and what should happen next time it does:
+- `EXTRACTION_NUM_CTX`'s default is 32768, not 8192 — four times the headroom, comfortably
+  covering the corpus's largest document (~3,300 words) plus a generous statement count,
+  without requiring exotic extended-context support from the model.
+- `main()`'s per-document loop now wraps `extract_document`/`link_agreements` in
+  `try/except (httpx.HTTPError, json.JSONDecodeError)`. A failure is treated exactly like a
+  document that legitimately produced nothing: logged, added to `empty`, given an empty
+  `documents/<doc_id>.json` (D35), and the job moves on. The run still fails overall (same
+  "a document with no statements is a silent gap" exit-1 path already in place) — this
+  isn't hiding the failure, it's refusing to let one bad response erase every other
+  document's completed work in the same run.
+
+Rejected: *raising `num_ctx` alone, without the try/except.* Reduces how often this
+happens but doesn't change what happens when it still does — some document, some model,
+some day, produces more output than any finite budget holds, and D35's whole premise (a
+crash shouldn't cost you the documents already done) was only half-built without also
+covering documents *not yet reached* when the crash happens.
+
+*Cost:* a document that fails this way now silently contributes zero statements to the
+final file rather than stopping the run for a human to look at — the same tradeoff D31 and
+D35 already accepted for other empty-document cases, extended to a new cause of emptiness.
+The stderr line (`"{doc_id}: extraction call failed (...)"`) is what distinguishes "the
+model genuinely found nothing" from "the call broke" in the log; nothing enforces that
+distinction downstream, since both feed the same `empty` list and the same exit code.
+
+*Note on numbering:* this entry was committed as "D36" (commit 32ae359), then collided with
+a second, unrelated "D36" (statement regrouping, above) added on this branch — a `git stash`
+conflict over the same header got committed with its `<<<<<<<`/`=======`/`>>>>>>>` markers
+left in place, docs/decisions.md#L1064 through #L1265 in ab4ea32. Every other reference to
+the regrouping and claim-only-cut decisions, in code and in docs, already says "D36" and
+"D37" for those two, so this entry moves here as D38 rather than the other two moving —
+content is unchanged from the original commit, only the number and position are.
+
+---
+
+## D39 — 2026-09-19 — Accepted
+
+**The answering prompt's citation-id example is fixed to the post-D36 id shape
+(`"<document_id>#<position>"`, e.g. `"workshop-notes-2026-03-12#1"`), replacing a stale
+`["stmt-004", "stmt-011"]` example left over from before D36 renumbered statement ids.**
+
+Reported symptom: citations stopped rendering in the frontend entirely after the D36/D37
+schema change, with no exception anywhere in the pipeline — `_resolve_citations`
+(llm_client.py) silently drops any id the model emits that isn't in `statements`, by
+design (D21), so a citation list of ids that don't match produces zero citations, not an
+error. D36 replaced the flat `"stmt-NNN"` ids the mock data used before it with derived
+`f"{document_id}#{position}"` ids (statements.py's `load_statements`), but
+`llm_client.SYSTEM_PROMPT`'s rule 6 was never updated — its worked example still showed
+`["stmt-004", "stmt-011"]`, a shape that now matches nothing in the payload. A small local
+model leans hard on a prompt's worked example; presented with real ids that look nothing
+like the example, it plausibly reverts to inventing ids in the example's shape instead of
+copying the real ones character for character — exactly the failure `_resolve_citations`
+was built to swallow silently.
+
+Fix: the prompt's opening statement description now names the id shape explicitly
+(document id plus position, with a real-shaped example) instead of just saying "an id",
+and rule 6's own example was updated to match. Rule 6 also gained an explicit "copy it
+exactly — never shorten it, renumber it, or make one up" instruction, since the failure
+mode is the model normalizing an unfamiliar-looking id into something that looks more like
+a typical short code.
+
+Rejected: *changing the id scheme back to something shorter instead of fixing the
+prompt.* The `document_id#position` shape is what D36 deliberately chose to avoid writing
+a redundant `id` field into the statements file — reverting it to shrink the string a
+model has to copy verbatim would undo D36's actual point (cutting stored/resent
+repetition) to work around a prompt that just hadn't been updated to describe the new
+shape.
+
+*Cost:* none identified — this restores the prompt to describing the payload it actually
+sends, which is what D21's citation-trust mechanism assumes it does. Not independently
+verified against a running model in this change; the fix is inferred from the mismatch
+between the prompt's example and the real id format, which is the only place in the
+codebase still showing the pre-D36 id shape (confirmed by grepping for `"stmt-"` across
+`docs/` and `backend/`).
+
+---
+
+## D40 — 2026-09-19 — Accepted, supersedes part of D21
+
+**`/query`'s statements payload is sent to the model as plain JSON text under
+`STATEMENTS_JSON`, not base64 under `STATEMENTS_B64`.**
+
+Direction from Niek, exercising the option D21 itself already left open: D21 chose base64
+"per direction from Niek" at the time, while flagging in its own *Cost* section that
+base64 costs roughly 33% more tokens and "requires the model to decode text before it can
+quote from it, which local Ollama models will do unreliably," and said outright: "if that
+shows up in testing, drop it and send plain JSON instead — the citation-resolution
+mechanism does not depend on the encoding." D39 (same day) is exactly that symptom: a
+plausible explanation for citations silently disappearing was the model mishandling an
+encoded payload rather than copying real ids out of it. Moving to plain text removes a
+whole failure mode (decode-then-quote) rather than just patching the one example that
+happened to be stale.
+
+What changed: `_build_messages` no longer base64-encodes `_grouped_payload`'s JSON dump; it
+puts the JSON straight into the user message under a renamed label, `STATEMENTS_JSON`
+(the old `STATEMENTS_B64` label described an encoding that no longer happens, so it had to
+change too, not just the bytes after it). `SYSTEM_PROMPT`'s opening paragraph no longer
+tells the model to decode anything. `base64` is no longer imported. Citation resolution
+(D21's actual trust mechanism) is untouched: the model still only ever gets to name an id,
+never assert a citation directly, and an id that doesn't resolve is still silently dropped.
+
+Rejected: *keeping base64 and only fixing D39's stale example.* Treats the symptom D39
+found without addressing the mechanism D21 already suspected of causing it — if decode
+unreliability was contributing to dropped citations, fixing one example string leaves the
+rest of that risk in place for the next id shape change.
+
+*Cost:* base64 also functioned as ballast in the prompt — the JSON structure was inert to
+the model until decoded, which meant field names like `"claim"` or `"speech_act"` couldn't
+accidentally read as instructions embedded in the user turn. Plain JSON reintroduces
+whatever prompt-injection-via-statement-content surface that ballast incidentally removed;
+untested here, and worth a look if a future document's text is adversarial toward the
+prompt itself. Not independently verified against a running model — D39 and this entry are
+both argued from the mechanism, not from an observed before/after answer.
+
+---
+
+## D41 — 2026-09-19 — Accepted
+
+**`_build_messages`'s user turn puts `QUESTION` before `STATEMENTS_JSON`, and the JSON
+itself is dumped with `separators=(",", ":")` instead of the default separators.**
+
+Direction from Niek. Two independent changes to the same user message, done together
+because both touch `_build_messages` right after D40 landed:
+
+- *Question first.* The statements payload is the large, mostly-fixed part of the user
+  turn; the question is a few words that used to trail dozens or hundreds of statements.
+  Putting it first means the model's next token after the instruction it most needs — what
+  to actually answer — isn't preceded by everything else it has to hold in mind first.
+  This trades away prefix-cache reuse across questions against the same statement set (the
+  varying part, the question, is now the prefix instead of the suffix, so an inference
+  server that caches a shared prompt prefix — D2's caching is about `load_statements()`,
+  not this — gets no reuse across two different questions); no such caching is currently
+  configured on the Ollama side, so there is nothing to lose today.
+- *Compact JSON.* `json.dumps(..., separators=(",", ":"))` drops the default `", "` and
+  `": "` spacing, shrinking the payload by roughly one byte per field and value — the same
+  token-cost motivation as D36/D40, applied to whitespace instead of structure. The default
+  `json.dumps` here never emitted actual newlines (no `indent=` was ever passed — D40's
+  base64 removal didn't change that), so this is a minification pass on top of D40, not a
+  fix for a real newline that existed.
+
+*Cost:* none identified for the compact separators. For question-first: if prefix caching
+is ever added on the inference side (D40's own *Cost* note already flagged the base64→plain
+move as relevant to that), this ordering is the one to revisit — it optimizes for the
+single-question case at the expense of the repeated-question-same-corpus case, and D2 never
+measured either against real latency numbers.
