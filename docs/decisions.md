@@ -112,7 +112,7 @@ different question set than the practice one.
 
 ---
 
-## D7 — 2026-09-18 — Accepted
+## D7 — 2026-09-18 — Superseded by D10
 **No technical specifications until the dataset is in hand.**
 
 No JSON schema, no endpoint definitions, no file layouts written down yet. The shape of
@@ -141,6 +141,29 @@ per service (slower, and three slightly different setups by Saturday).
 
 ---
 
+## D10 — 2026-09-18 — Accepted — Supersedes D7 for the answering path
+**Fixed the statement contract now, ahead of the real dataset, to unblock the backend.**
+
+D7 deferred every schema until the corpus was in hand. But the backend's `/query` endpoint
+needed something concrete to read, so we fixed the field shape data-model.md already
+specifies — id, document_id, location (page/line-range), verbatim_span, actor
+(name/organization/role), agreed_by, speech_act, statement_date, document_date — as a
+Pydantic model in `backend/src/app/statements.py`, and wrote a hand-built mock statements
+file to the same shape so the endpoint has something real to load.
+
+Rejected: the simpler three-field shape (who / what / when) that was first proposed for
+the mock. It cannot produce a valid citation — no document id, no location, no verbatim
+span — which fails CLAUDE.md's "never invent a citation" rule outright, and drops the
+speech-act field requirement 2 (suggestion ≠ commitment) depends on. Building the mock to
+the documented shape instead was zero extra cost and kept the mock honest about what
+extraction will actually have to produce.
+
+*Cost:* this is still a guess about document structure — page numbers, line ranges and
+per-document-type location shape may not survive contact with the real 45 documents, and
+extraction has not been built against this contract yet. D7's underlying caution (the real
+corpus will change the shape) stands; what changed is that we needed *a* contract to build
+the answering path against, and picked the one already reasoned about in data-model.md
+over inventing a new one. If the real shape diverges, that supersedes this entry, not D7.
 ## D10 — 2026-09-18 — Accepted
 **Python 3.12 across the workspace, pinned at the repo root.**
 
@@ -160,6 +183,44 @@ want the bump.
 ---
 
 ## D11 — 2026-09-18 — Accepted
+**`/query`: statements delivered to the model as base64, citations resolved server-side
+against the trusted file, never taken from the model's own output.**
+
+The statements file is base64-encoded and put in a user message for the answering call,
+per direction from Niek. Rejected: plain JSON in the message. Base64 is worse on every
+axis that matters for accuracy — roughly 33% more tokens, and it requires the model to
+decode text before it can quote from it, which local Ollama models will do unreliably.
+Kept anyway because we can fully neutralise the accuracy risk without changing the
+transport: the model never gets to assert a citation's document/location/verbatim_span
+directly. It tags claims inline with bracket markers (`[1]`, `[2]`, ...) and, after a fixed
+delimiter (`===CITATIONS===`), lists the statement ids those markers refer to. The backend
+looks each id up in its own copy of the statements file — loaded straight from disk, never
+round-tripped through the model — and builds the citation object from that. An id the
+model invented, or corrupted while decoding, resolves to nothing and is silently dropped
+rather than shown. This is what makes rule 1 ("no citation rather than an approximate one")
+true by construction instead of by hoping the model behaves.
+
+Rejected also: asking the model to reproduce the full citation (document id, location,
+verbatim span) itself, then trusting it. Same hallucination surface as free-text citations
+generally, just wrapped in JSON — the whole reason for the id-lookup indirection is to
+remove verbatim-text reproduction from the model's job entirely.
+
+*Cost:* if the model never emits the delimiter line, or emits ids we can't parse, the
+answer comes back with zero citations rather than a partial set — the honest failure mode,
+but it means a confused model produces an uncited wall of text, not an error we can
+surface distinctly from "the record is silent." Also: base64 is still burning tokens and
+degrading answer quality for no benefit we've identified; if that shows up in testing, drop
+it and send plain JSON instead — the citation-resolution mechanism does not depend on the
+encoding.
+
+**Streaming**, added because it was cheap given the design above: the prose answer is
+streamed live over SSE as `token` events, token-by-token from the upstream OpenAI-like
+completion. Citations are held back — never streamed — until the reply is complete, then
+resolved through the same validation gate and sent as one final `citations` event. Rejected:
+streaming the raw model output straight through, which would put an unvalidated citation
+marker in front of a judge before we've checked it resolves to anything real. The buffering
+keeps a safety margin equal to the delimiter's length so the delimiter can't leak a
+fragment of itself if it lands across two upstream chunks.
 **One Dockerfile per service, but every image builds from the repository root.**
 
 Each service keeps its own Dockerfile next to its code. The build context is the repo root:
