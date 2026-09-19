@@ -63,6 +63,7 @@ docs/
   open-questions.md what we have deliberately not decided yet
   roadmap.md        MVP boundary, planned extensions, honest limits
   demo.md           judging prep: what we submit and what we show, in what order
+  deletion.md       how deletion works, where it stands, what is left
 CLAUDE.md           working agreement for humans and coding agents
 ```
 

@@ -59,3 +59,12 @@ Compose passes `EXTRACTION_LLM_BASE_URL` (the `ollama` service) and `EXTRACTION_
 and the working agreement says never to assume otherwise. See
 [decision D23](../docs/decisions.md). Nothing reads them yet — the real extraction pass
 does.
+
+## Deleting a person
+
+`uv run python -m src.app.delete "Kwame Boateng"` rewrites the statements file in place, replacing
+that person with a role placeholder everywhere they appear, and prints a receipt. `--dry-run` shows
+the receipt and changes nothing. There is no backup: it would be a second copy of the name. Run it
+in compose with `docker compose run --rm --no-deps statement-extraction uv run --frozen python -m
+src.app.delete "<name>"`. The backend reads the file on every request, so it answers from the
+rewrite straight away. How it works and where it stands: [docs/deletion.md](../docs/deletion.md), [D37 and D38](../docs/decisions.md).
