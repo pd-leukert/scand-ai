@@ -86,7 +86,10 @@ do not say" from "our extraction did not catch it".
 of 90k tokens, which is why the brief says it fits in a long context window. What we do
 *not* know is the size of the reconciled file derived from it, and that is the number that
 decides whether D2 holds. The extraction job now prints both file sizes and a token estimate
-at the end of every run; the first real run is the measurement.
+at the end of every run. The first measurement, four documents on a small laptop model, was
+a 95 kB reconciled file and a 56k-token prompt, which overran Ollama's default 4096-token
+context and was silently truncated. Set the context length explicitly, and expect the full
+corpus not to fit in one prompt (D31).
 
 **Identity is resolved by a model, not by a registry.** One person appears under two
 spellings and two people share a first name, and until extension 3 below exists there is

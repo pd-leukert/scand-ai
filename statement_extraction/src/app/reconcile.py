@@ -390,9 +390,12 @@ def reconcile(
         reconciled.append(topic)
         counts = Counter(topic["statuses"].values())
         note = f", dropped {dict(drops)}" if drops else ""
+        # Density is a review flag, not a gate: a genuinely contested topic is dense, but a
+        # small model linking every statement to every other one looks the same in the counts.
+        links = len(topic["relations"])
         progress(
-            f"{name}: {len(statements)} statements, {len(topic['relations'])} relations, "
-            f"statuses {dict(counts)}{note}"
+            f"{name}: {len(statements)} statements, {links} relations "
+            f"({links / len(statements):.1f} each), statuses {dict(counts)}{note}"
         )
     if untagged:
         # Nothing was reconciled here, so nothing can be said against these: they are current

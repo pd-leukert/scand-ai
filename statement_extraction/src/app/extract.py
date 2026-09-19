@@ -151,14 +151,20 @@ def main(filters: list[str]) -> int:
     return 0
 
 
+# Base64 tokenises badly. Measured on qwen3:0.6b: a 95 kB reconciled file became a 56k-token
+# prompt, about 2.3 characters a token, where prose is about 4.
+BASE64_CHARS_PER_TOKEN = 2.3
+
+
 def _size_report(statements_path: Path, reconciled_path: Path) -> str:
     """D2's ceiling is unmeasured until something measures it. The whole reconciled file goes
     into the answering context, base64-encoded (D21), so report what that actually costs.
 
-    Rough on purpose: four characters a token, and the file's bytes include indentation and
-    fields the backend never sends. It is the order of magnitude that decides whether D2 holds."""
+    Rough on purpose: the file's bytes include indentation and fields the backend never sends,
+    and another model's tokenizer will differ. It is the order of magnitude that decides whether
+    D2 holds, and Ollama truncates a prompt over its context silently."""
     before, after = statements_path.stat().st_size, reconciled_path.stat().st_size
-    tokens = after * 4 // 3 // 4
+    tokens = round(after * 4 / 3 / BASE64_CHARS_PER_TOKEN)
     return (
         f"{statements_path.name} {before // 1000} kB, {reconciled_path.name} {after // 1000} kB "
         f"({(after - before) / before:+.0%}), about {tokens // 1000}k tokens once base64-encoded "

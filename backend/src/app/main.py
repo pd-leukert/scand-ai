@@ -1,8 +1,13 @@
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
+from .config import get_settings
 from .llm_client import answer_question, stream_answer_question
 from .schemas import QueryRequest, QueryResponse
+
+# A bad setting stops the container here, with the reason in its log, not on the first question
+# behind a healthy healthcheck.
+get_settings()
 
 app = FastAPI(
     title="scand-ai backend",

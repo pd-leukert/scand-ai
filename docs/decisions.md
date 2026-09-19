@@ -950,6 +950,19 @@ Rejected:
    prints both file sizes and a token estimate at the end of every run. That number is D2's
    answer and belongs in the demo. Every `unresolved` statement also gets a problem entry, which
    is likely the biggest single source of growth.
+
+   **Measured, on a laptop with `qwen3:0.6b` (2026-09-19), and it is worse than D2 hoped.**
+   Four documents (about 4,600 words) gave 81 statements and a 95 kB reconciled file, 49%
+   larger than `statements.json`. Base64 of that is a 56,197-token prompt, about 2.3 characters a
+   token (the job's size line first assumed 4 and under-reported by 1.8×; it now uses 2.3).
+   Ollama's default slot is 4096 tokens, and it truncated the prompt to 2,050 without an error,
+   which cuts off the system prompt and almost all of the record: the model then answered blind,
+   uncited. `compose.yaml` sets no context length for the answering call and the `/v1` endpoint
+   cannot set one per request, so the stack needs `OLLAMA_CONTEXT_LENGTH` on the `ollama`
+   service, sized to the record. Scaled by words the whole corpus would be several hundred
+   thousand tokens. That ratio comes from a 0.6b model's extraction, which over-extracts, so it
+   is an upper-end guess, but it is the reason D2's successor (a compact index first, then only
+   the statements the model picks) may be needed rather than merely available.
 3. **A missed link is a statement reported as `current`.** Untagged statements, a topic cut into
    chunks, a link across the cut, and a link the model did not see all fail in the same, safe
    direction — but that makes the signal a floor, not a guarantee, and the honest limit in the
@@ -994,7 +1007,8 @@ Smaller calls made while building it, each with what it beat:
   signal nobody produced (rule 5). *Cost:* two prompts and two payload shapes to keep
   honest, and the statements-mode citations show no status pill at all, which is correct and
   looks like a regression next to the reconciled ones. The value is read at startup, so
-  switching it means restarting the backend.
+  switching it means restarting the backend, and a bad value stops the container there with the
+  reason in its log rather than failing on the first question behind a healthy healthcheck.
 - **CLAUDE.md rule 2 now says the answering path reads one derived file — the reconciled file,
   or with the toggle the statements file — and nothing else.** The rule's point (no source
   documents, no model memory, no extraction) is unchanged.
