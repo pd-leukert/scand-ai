@@ -89,6 +89,27 @@ def test_a_run_that_finds_nothing_leaves_the_per_document_file_for_inspection(
     assert json.loads(doc_file.read_text(encoding="utf-8")) == {"statements": []}
 
 
+def test_a_malformed_model_response_does_not_crash_the_whole_run(
+    job: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A truncated/invalid JSON response from the model (seen in production once a whole
+    document goes in one call — D31/D36) must not take the rest of the corpus down with
+    it: the job keeps going and reports the bad document as empty, same as one that
+    legitimately produced nothing."""
+    other = job.parent / "corpus" / "transcripts" / "02_other.txt"
+    other.write_text(TRANSCRIPT, encoding="utf-8")
+
+    def broken_for_the_first(messages: list[dict[str, str]]) -> dict:
+        if "01_kickoff" in messages[1]["content"]:
+            raise json.JSONDecodeError("Unterminated string", "doc", 0)
+        return answer(messages)
+
+    monkeypatch.setattr(extract, "_ollama_chat", lambda *_: broken_for_the_first)
+    assert extract.main([]) == 1
+    written = json.loads(job.read_text(encoding="utf-8"))
+    assert [s["document_id"] for s in written["statements"]] == ["transcripts/02_other"]
+
+
 def test_a_run_that_finds_nothing_fails_and_leaves_the_old_file_alone(
     job: Path, monkeypatch: pytest.MonkeyPatch
 ):

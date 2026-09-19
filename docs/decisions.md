@@ -1057,3 +1057,46 @@ debugging most needs the per-document breakdown. A run interrupted partway (kill
 leaves it behind too, for the same reason. Only a clean, fully-merged run cleans up; anyone
 inspecting a stale `documents/` directory after such a run should treat it as leftover from
 an earlier failed attempt, not as current.
+
+---
+
+## D36 — 2026-09-19 — Accepted
+**Fixes a production crash: `EXTRACTION_NUM_CTX`'s default raised 8192 → 32768, and one
+document's malformed model response no longer takes down the whole extraction run.**
+
+Reported symptom: the extraction container crashed with an unhandled
+`json.decoder.JSONDecodeError: Unterminated string`, in `_ollama_chat`'s
+`json.loads(response.json()["message"]["content"])`. Root cause: D31 removed the ~300-word
+chunker and started sending a whole document to the model in one call, on the reasoning
+that every document in this corpus is small enough to fit — true for the input side, but
+D31's own cost note already flagged the output side as unchecked: a document with many
+statements needs a correspondingly long schema-constrained JSON response, and input plus
+output both draw from the same `num_ctx` budget. Once that budget runs out mid-generation,
+Ollama stops — not with an error, just a response cut off wherever it was, which is exactly
+what "unterminated string" is: valid JSON up to the point the token budget ended, then
+nothing.
+
+Two changes, addressing both what happened and what should happen next time it does:
+- `EXTRACTION_NUM_CTX`'s default is 32768, not 8192 — four times the headroom, comfortably
+  covering the corpus's largest document (~3,300 words) plus a generous statement count,
+  without requiring exotic extended-context support from the model.
+- `main()`'s per-document loop now wraps `extract_document`/`link_agreements` in
+  `try/except (httpx.HTTPError, json.JSONDecodeError)`. A failure is treated exactly like a
+  document that legitimately produced nothing: logged, added to `empty`, given an empty
+  `documents/<doc_id>.json` (D35), and the job moves on. The run still fails overall (same
+  "a document with no statements is a silent gap" exit-1 path already in place) — this
+  isn't hiding the failure, it's refusing to let one bad response erase every other
+  document's completed work in the same run.
+
+Rejected: *raising `num_ctx` alone, without the try/except.* Reduces how often this
+happens but doesn't change what happens when it still does — some document, some model,
+some day, produces more output than any finite budget holds, and D35's whole premise (a
+crash shouldn't cost you the documents already done) was only half-built without also
+covering documents *not yet reached* when the crash happens.
+
+*Cost:* a document that fails this way now silently contributes zero statements to the
+final file rather than stopping the run for a human to look at — the same tradeoff D31 and
+D35 already accepted for other empty-document cases, extended to a new cause of emptiness.
+The stderr line (`"{doc_id}: extraction call failed (...)"`) is what distinguishes "the
+model genuinely found nothing" from "the call broke" in the log; nothing enforces that
+distinction downstream, since both feed the same `empty` list and the same exit code.

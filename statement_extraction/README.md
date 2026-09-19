@@ -37,9 +37,10 @@ what happened.
 - `CORPUS_DIR` — defaults to `input/`, baked into the image at build time (D18).
 - `STATEMENTS_FILE_PATH` — where the result is written, `/data/statements.json` in compose.
   Same variable name the backend reads: one name for the one artifact.
-- `EXTRACTION_NUM_CTX` — the context window passed to Ollama. Defaults to 8192; a whole
-  document goes in one model call, so raise this if a document plus its statements will
-  not fit.
+- `EXTRACTION_NUM_CTX` — the context window passed to Ollama. Defaults to 32768; a whole
+  document goes in one model call (D31), and a context too small to hold the document plus
+  its statements truncates the model's JSON mid-object and crashes the job (D36) — raise
+  this further before assuming a document is the problem.
 - `EXTRACTION_TIMEOUT` — per-request timeout in seconds. Defaults to 600.
 
 These are deliberately separate from the backend's `LLM_BASE_URL`/`LLM_MODEL`: extraction
