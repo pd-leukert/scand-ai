@@ -17,7 +17,7 @@ minutes of questions.**
 **The one page has four named questions, and answering exactly those four is the job:**
 how provenance is stored ([data-model.md](data-model.md)), how we catch stale facts
 (a second pass writes explicit links between statements and derives the status from them,
-never from dates — [D31](decisions.md); say that it is a floor, not a guarantee), how deletion propagates
+never from dates — [D40](decisions.md); say that it is a floor, not a guarantee), how deletion propagates
 ([D3](decisions.md), [D19](decisions.md)), and where inference runs
 ([architecture.md](architecture.md#residency)). It is a summary of documents we already
 have; do not write it from scratch on Sunday morning.

@@ -10,7 +10,7 @@ import streamlit as st
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 # Seconds to wait on the backend. The whole record goes into the model's context, so the wait
-# is set by how big that record is and how fast the box is, not by this app. See D34.
+# is set by how big that record is and how fast the box is, not by this app. See D43.
 REQUEST_TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", "120"))
 
 DOC_LABEL_RE = re.compile(r"^(.*?)-\d{4}-\d{2}-\d{2}$")
@@ -189,7 +189,7 @@ def location_label(location: dict) -> str:
 
 # status -> (pill label, css class). "current" has no entry on purpose: a pill is a warning, and
 # everything the record does not flag is current. The status and the ids behind it are worked out
-# by the backend (D31); this only shows them.
+# by the backend (D40); this only shows them.
 STATUS_PILLS = {
     "stale": ("Superseded", "sc-pill-stale"),
     "never-true": ("Never true", "sc-pill-never-true"),

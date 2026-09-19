@@ -21,7 +21,7 @@ async def query(request: QueryRequest) -> QueryResponse | StreamingResponse:
     """Answer a question from the reconciled file only, with verified citations."""
     # Checked here rather than inside the generator: once a StreamingResponse has started there
     # is no status code left to set, and a half-answer from a truncated record is the one thing
-    # this must not do. See D34.
+    # this must not do. See D43.
     if shortfall := context_shortfall(request.question):
         tokens, num_ctx = shortfall
         raise HTTPException(
@@ -44,7 +44,7 @@ async def query(request: QueryRequest) -> QueryResponse | StreamingResponse:
     except httpx.TimeoutException as timeout:
         # The whole record is processed as prompt before a single token comes back, so a slow
         # box times out rather than answers. Saying that is useful; a 500 and a traceback in
-        # the backend log is not. See D34.
+        # the backend log is not. See D43.
         waited = get_settings().llm_timeout_seconds
         raise HTTPException(
             status_code=504,

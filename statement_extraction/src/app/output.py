@@ -1,6 +1,6 @@
 NOT_STATED = "Not stated"
 
-# D31's escape hatch. The topic summaries and the model's problem notes are the only model-written
+# D40's escape hatch. The topic summaries and the model's problem notes are the only model-written
 # prose in reconciled.json, and prose is what deletion cannot redact by matching a name. If
 # deletion is not built against this file in time, set this to False: the artifact then carries
 # ids and enums only. Do not ship a half-redacted summary instead.
@@ -51,7 +51,7 @@ def _actor(actor: dict) -> dict:
 
 def to_reconciled(topics: list[dict], problems: list[dict], generated_on: str) -> dict:
     """The reconciled file: each topic with its statements nested inside, so the backend joins
-    nothing (D31). A statement is to_statement plus its status, and lives in exactly one topic;
+    nothing (D40). A statement is to_statement plus its status, and lives in exactly one topic;
     a relation lives on its topic, once. The counts are taken from what is nested here, not from
     what went in, so they cannot disagree with the file."""
     nested = [

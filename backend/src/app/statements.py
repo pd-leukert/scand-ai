@@ -4,7 +4,7 @@ statements file it was derived from (ANSWER_SOURCE, see config.py).
 Field shape follows docs/data-model.md. Not a schema until the real dataset is in hand
 (decisions.md D7) — this is the interim shape the mock files and the answering path agree
 on; see decisions.md D20. The reconciled file is the statements grouped by topic, with the
-relations between them and a status on each, written by the reconciliation pass (D31). The
+relations between them and a status on each, written by the reconciliation pass (D40). The
 statements file is the flat list before that pass.
 """
 
@@ -51,7 +51,7 @@ class Statement(BaseModel):
     statement_date: datetime
     document_date: date
     # Worked out by the reconciliation pass from the relations, never from dates. The default
-    # keeps a file written before D31 loadable, and "current" is what an unlabelled statement is.
+    # keeps a file written before D40 loadable, and "current" is what an unlabelled statement is.
     status: Status = "current"
 
 

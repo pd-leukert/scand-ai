@@ -23,7 +23,7 @@ These are not style preferences. Breaking one of them costs us a scoring slice.
    this too, explicitly.
 2. **The answering path reads one derived file and nothing else** — the reconciled file
    by default, or the statements file it was derived from if `ANSWER_SOURCE=statements`
-   (D31). It does not read source documents, does not call extraction, and does not fall
+   (D40). It does not read source documents, does not call extraction, and does not fall
    back on the model's own knowledge. If the statements do not support an answer, the
    answer is that the record is silent.
 3. **Deletion changes the derived artifact.** Never implement deletion as a filter applied
@@ -36,7 +36,7 @@ These are not style preferences. Breaking one of them costs us a scoring slice.
 4. **Do not add a second derived artifact without making deletion cascade to it.** Caches,
    embeddings, indexes, pre-computed summaries: each is a new place a deleted person
    survives. Adding one and wiring deletion into it is a single piece of work, not two. As
-   of D31 there are two derived artifacts, `statements.json` and `reconciled.json`, and the
+   of D40 there are two derived artifacts, `statements.json` and `reconciled.json`, and the
    reconciled one holds model-written prose (topic summaries, problem notes) as well as
    verbatim spans: a deleted person can survive in a sentence that no span match will find.
    If deletion is not built against both, stop writing the prose (`KEEP_PROSE` in
@@ -44,7 +44,7 @@ These are not style preferences. Breaking one of them costs us a scoring slice.
 5. **Currency is link-derived, never date-derived.** A statement is *stale* only because a
    named later statement supersedes it, and *never-true* only because a named statement says
    it was wrong when it was recorded — and the statement ids that justify the label travel
-   with it all the way to the citation (D31). Do not add a date heuristic, do not let the
+   with it all the way to the citation (D40). Do not add a date heuristic, do not let the
    answering model improvise a status, and do not let a statement be flagged by anything but
    a link to another statement that exists. If the reconciliation pass did not label it, it
    is current, and "current" means only that nothing we grouped with it contradicts it. When

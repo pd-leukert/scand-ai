@@ -9,10 +9,10 @@ mangles while copying it out of the record, simply resolves to nothing and is dr
 is what CLAUDE.md means by "if code cannot guarantee [a citation], it must emit no
 citation rather than an approximate one" — see decisions.md D21. A statement's status, and
 the ids that justify it, are copied the same way: the model reads a currency, it never
-asserts one (D31).
+asserts one (D40).
 
 The record is the reconciled file by default. ANSWER_SOURCE=statements answers from the flat
-statements file instead, exactly as before D31: no status in the context, the prompt that says
+statements file instead, exactly as before D40: no status in the context, the prompt that says
 currency is unknowable, and `status: null` on every citation.
 """
 
@@ -85,7 +85,7 @@ JSON array of the statement ids the markers refer to, in marker order, e.g. \
 that appear in the statements you were given — never invent one.
 """
 
-# For ANSWER_SOURCE=statements: the prompt as it was before D31. Nothing was reconciled, so the
+# For ANSWER_SOURCE=statements: the prompt as it was before D40. Nothing was reconciled, so the
 # model is told currency is unknowable rather than shown a status that no pass produced.
 STATEMENTS_ONLY_PROMPT = f"""You are the answering agent for a rollout decision record.
 
@@ -195,7 +195,7 @@ def context_shortfall(question: str) -> tuple[int, int] | None:
     endpoint has no per-request `num_ctx` — the server's OLLAMA_CONTEXT_LENGTH decides. So the
     backend cannot make the window bigger from here; it can only refuse to answer from a record
     the model would only partly see. LLM_NUM_CTX is what the server is configured to serve, and
-    leaving it unset turns the guard off. See D34.
+    leaving it unset turns the guard off. See D43.
     """
     settings = get_settings()
     if not settings.llm_num_ctx:

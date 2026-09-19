@@ -42,7 +42,7 @@ Module docstring, house style:
 
 > *Second pass: group the first pass's statements by topic, then reconcile each topic.
 > Nothing here writes a new quote. Every relation, status, receipt and problem names a
-> statement id the first pass already produced; anything else is dropped. See D31.*
+> statement id the first pass already produced; anything else is dropped. See D40.*
 
 **The model never sees a statement id.** Both stages render statements under local labels
 `S1 … Sn` and map back in code. `transcripts/07_2024-11-12_ordering-logic-design#12` is not
@@ -364,7 +364,7 @@ for a citation, so it is dropped rather than shown — same reflex as `find_span
 **One date guard, and it creates nothing.** Drop a `supersedes` link whose `from` is strictly
 earlier in `stated_on` than its `to`. This rejects a model error; it never produces a status.
 It is deliberately **not** applied to `corrects`, the relation that produces `never-true`, so
-that relation stays entirely date-free. Same-day links pass. D31 names this explicitly so
+that relation stays entirely date-free. Same-day links pass. D40 names this explicitly so
 nobody later reads it as rule 5 being bent.
 
 **Two gates against the failure that looks like success** — a grouping so fragmented that no
@@ -522,8 +522,8 @@ it, so `statement_extraction/pyproject.toml` and `uv.lock` are untouched.
 
 ## 10. Docs — required, not optional
 
-**`docs/decisions.md`** — append **D31**, dated 2026-09-19, `Accepted *(supersedes D4 and D16)*`,
-and mark `## D4 … — Superseded by D31` and `## D16 … — Superseded by D31`. Bold decision, prose,
+**`docs/decisions.md`** — append **D40**, dated 2026-09-19, `Accepted *(supersedes D4 and D16)*`,
+and mark `## D4 … — Superseded by D40` and `## D16 … — Superseded by D40`. Bold decision, prose,
 `Rejected:` list, `*Cost:*`. It must contain:
 
 - **Rejected**: a date sort in any form (and an explicit note that the one date read is a guard
@@ -557,12 +557,12 @@ and mark `## D4 … — Superseded by D31` and `## D16 … — Superseded by D31
 > 5. **Currency is link-derived, never date-derived.** A statement is *stale* only because a named
 >    later statement supersedes it, and *never-true* only because a named statement says it was
 >    wrong when it was recorded — and the statement ids that justify the label travel with it all
->    the way to the citation (D31). Do not add a date heuristic, do not let the answering model
+>    the way to the citation (D40). Do not add a date heuristic, do not let the answering model
 >    improvise a status, and do not let a statement be flagged by anything but a link to another
 >    statement that exists. If the reconciliation pass did not label it, it is current, and
 >    "current" means only that nothing we grouped with it contradicts it.
 
-**`CLAUDE.md` rule 4** — add a sentence: as of D31 there are two derived artifacts, and in the
+**`CLAUDE.md` rule 4** — add a sentence: as of D40 there are two derived artifacts, and in the
 reconciliation a deleted person can survive in model-written prose as well as in a verbatim span.
 
 **Also update**: `README.md` requirement-3 row and the "How it works" steps 2–3;

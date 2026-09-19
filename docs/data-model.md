@@ -83,13 +83,13 @@ message count. Two things worth carrying onto the statement beyond the document 
 - **The date of the statement**, and separately the date of the document containing it,
   because a status report written in June can describe a decision made in March.
 
-Dates alone do not solve currency. The reconciliation pass (D31, below) reads them for
+Dates alone do not solve currency. The reconciliation pass (D40, below) reads them for
 exactly one thing: ordering statements for the model, and rejecting a `supersedes` link
 that runs backwards in time. See [roadmap.md](roadmap.md).
 
 ## What the reconciliation pass adds
 
-A second pass over the aggregated statements (D31) writes a second file. It does not change
+A second pass over the aggregated statements (D40) writes a second file. It does not change
 a statement; it wraps them.
 
 - **Topics.** Every statement is in exactly one topic, a short kebab-case subject tag
@@ -129,7 +129,7 @@ the part people forget; the spelling variant is the part that fails
 silently. A redaction that leaves the quoted line intact publishes the name in
 the citation — the one place we are guaranteed to show the judge.
 
-Since D31 there are **two** derived files, and both have to be redacted. The reconciled
+Since D40 there are **two** derived files, and both have to be redacted. The reconciled
 file nests every statement, so it repeats every span and actor field the statements file
 has. It also holds model-written prose — the topic summaries and problem notes — where a
 name can sit in a sentence rather than in a span, and where matching the span will not find

@@ -21,7 +21,7 @@ class Citation(BaseModel):
     model's output — see llm_client._resolve_citations. That is what lets us guarantee no
     invented citations regardless of what the model does with its input. The status and the
     ids that justify it are no exception: the answering model never asserts a statement's
-    currency, it reads it (D31).
+    currency, it reads it (D40).
     """
 
     marker: int

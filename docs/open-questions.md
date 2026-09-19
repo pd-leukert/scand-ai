@@ -20,14 +20,14 @@ the evidence for each, and what each one costs are in [roadmap.md](roadmap.md) �
 | Option | Cost | Catch |
 |---|---|---|
 | Audience-scoped answering (INTERNAL / PARTNER / customer) | Low — the markers are already in the corpus | Reads as query-time filtering, which the deletion slice punishes; needs an argument for why it is legitimate here |
-| Contradiction alarm when a new document arrives | Medium — the reconciliation pass now exists (D31); needs ingesting a new document and reconciling it without redoing everything | Best demo moment in the list |
-| Drift report: agreed vs. actually done | Medium — the supersedes and answers links now exist (D31) | Practice question P8 asks almost exactly this |
+| Contradiction alarm when a new document arrives | Medium — the reconciliation pass now exists (D40); needs ingesting a new document and reconciling it without redoing everything | Best demo moment in the list |
+| Drift report: agreed vs. actually done | Medium — the supersedes and answers links now exist (D40) | Practice question P8 asks almost exactly this |
 | Monday-morning briefing for a joiner | Lowest | Closest to "a search engine with footnotes", which the brief names as the thing to beat |
 
 Whoever decides: write the entry, update [demo.md](demo.md) step 4, and say what was
 rejected.
 
-Two things D31 surfaces and does not decide. The topic summaries the reconciliation pass
+Two things D40 surfaces and does not decide. The topic summaries the reconciliation pass
 writes are the cheapest material for the "brief someone joining on Monday" option and are
 already generated — but they are model-written prose, the hardest thing for deletion to
 redact, so showing them in the UI is a bet on deletion landing. And `claim`, the one-sentence

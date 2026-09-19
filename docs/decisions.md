@@ -31,7 +31,7 @@ This is the direct cause of D4.
 
 ---
 
-## D2 — 2026-09-18 — Accepted *(what goes into context is now reconciled.json — D31)*
+## D2 — 2026-09-18 — Accepted *(what goes into context is now reconciled.json — D40)*
 **The whole statements file goes into the answering model's context. No retrieval.**
 
 Rejected: retrieval or embedding-based selection of relevant statements. Rejected for the
@@ -47,7 +47,7 @@ retrieval with embeddings only if that is not enough.
 
 ---
 
-## D3 — 2026-09-18 — Accepted *(its "no second derived artifact" condition no longer holds — see D31)*
+## D3 — 2026-09-18 — Accepted *(its "no second derived artifact" condition no longer holds — see D40)*
 **Deletion redacts a person to a role-class placeholder in the statements file.**
 
 A deleted person's name is replaced with `[former RELEX employee]` or
@@ -78,7 +78,7 @@ re-run of the pipeline — this decision has to be revisited, because the name c
 
 ---
 
-## D4 — 2026-09-18 — Superseded by D31
+## D4 — 2026-09-18 — Superseded by D40
 **Currency is out of scope for the MVP.**
 
 We do not classify statements as stale or never-true, and we do not link statements that
@@ -343,7 +343,7 @@ file each time, which is the boring version and fine at this size.
 
 ---
 
-## D16 — 2026-09-19 — Superseded by D31
+## D16 — 2026-09-19 — Superseded by D40
 **Currency stays out of today's MVP. The agreed successor is a second-pass LLM layer that
 groups statements and evaluates them — not a date heuristic, and not nothing.**
 
@@ -870,7 +870,12 @@ statement_extraction/README.md.
 
 ---
 
-## D31 — 2026-09-19 — Accepted *(supersedes D4 and D16)*
+## D40 — 2026-09-19 — Accepted *(supersedes D4 and D16)*
+*Numbering: written as D31–D34 on the `david/llm-b` branch and renumbered D40–D43 at merge,
+because `main` had meanwhile taken D31–D36 for the whole-document extraction work (PR #19, #21),
+and D37–D39 are claimed by the deletion PR. Commit messages and PR #20 refer to the old numbers:
+D31→D40, D32→D41, D33→D42, D34→D43. Main's D31–D36 are untouched.*
+
 **Currency is in the MVP. A second LLM pass groups the statements by topic, writes explicit
 relations between them, and derives a status for each statement from those relations alone.
 It writes a second derived artifact, `reconciled.json`, and the answering path reads that by
@@ -1019,7 +1024,7 @@ Smaller calls made while building it, each with what it beat:
 
 ---
 
-## D32 — 2026-09-19 — Accepted
+## D41 — 2026-09-19 — Accepted
 **The extraction pass is left exactly as it is. Everything below is the second pass and the
 answering path.**
 
@@ -1036,7 +1041,7 @@ because their span was not in the unit verbatim, and nothing invented reached th
 So: those are prompt-and-model problems, and the evidence is that they are what a bigger model
 is for. Rewriting the extraction prompt against a 0.6b model's mistakes would tune it for a
 model we do not ship. The second pass's failures are different in kind — they are places where
-code accepted something no model should have been able to get past it — and those are D33.
+code accepted something no model should have been able to get past it — and those are D42.
 
 *Cost:* the extraction quality numbers above are unverified against the VM model, and if they
 survive at 27B then the first pass needs the work after all. The four-document run is the test
@@ -1047,12 +1052,12 @@ one file whose output every other file is derived from is the expensive kind.
 
 ---
 
-## D33 — 2026-09-19 — Accepted *(extends D31)*
+## D42 — 2026-09-19 — Accepted *(extends D40)*
 **Three new gates on the reconciliation pass, and the topic tagger is no longer shown a
 statement's speech act.**
 
-D31 built the second pass and validated everything the model returns against the statements it
-was given. The four-document run (D32) got past all of it and produced an artifact that was
+D40 built the second pass and validated everything the model returns against the statements it
+was given. The four-document run (D41) got past all of it and produced an artifact that was
 structurally perfect and semantically worthless: 92 statements in 3 topics named `proposal`,
 `agreement` and `report`, 27 of the 33 relations a single `corrects` chain running
 `#1→#2→#3→…` down the list, and 27 statements labelled `never-true` including one whose whole
@@ -1069,17 +1074,17 @@ Each gate answers one of those.
   kebab-case slug, so `_slug` had no reason to refuse it. Belt and braces with the above: the
   render fix removes the temptation, this one removes the possibility.
 - **`RECONCILE_MAX_TOPIC_SHARE` (0.5)** — no single topic may hold more than half the run's
-  statements. D31 gated fragmentation (`RECONCILE_MAX_TOPICS`) because a grouping where no
+  statements. D40 gated fragmentation (`RECONCILE_MAX_TOPICS`) because a grouping where no
   topic holds two statements finds no links and reports the whole record `current`. Total
   collapse is the same failure from the other end: one topic held 84 of 92 statements, was cut
   into three chunks of 28 by `RECONCILE_TOPIC_MAX`, and each chunk showed the model 28
   unrelated statements and asked what they had to do with each other.
 - **`RECONCILE_MAX_FLAGGED` (0.5)** — per topic, the share of statements a relation may put in
-  `never-true`, `stale` or `disputed`. This is the one that catches the chain. D31 deliberately
+  `never-true`, `stale` or `disputed`. This is the one that catches the chain. D40 deliberately
   left `corrects` without the date guard it gave `supersedes`, on the reasoning that a
   statement can show a record was never right without being dated after it — which is correct,
   and which also means `corrects` has no guard at all, while producing the *more* severe label.
-  A density gate is relation-kind-agnostic and catches the degenerate shape directly. D31 called
+  A density gate is relation-kind-agnostic and catches the degenerate shape directly. D40 called
   density "a review flag, not a gate"; over half a topic it is now a gate. `unresolved` is
   excluded from the count deliberately: it falls out of a proposal nobody answered, which is a
   property of one statement rather than a link, and a topic of open proposals is not a chain.
@@ -1096,7 +1101,7 @@ existed untunable on the VM.
 dense, a small corpus legitimately has one big topic, and a real subject could be called
 `report`. All are configurable, and a run over one or two documents should expect to loosen
 them exactly as it already loosens `RECONCILE_MAX_TOPICS`. Three gates now fail the whole job
-rather than dropping what tripped them, which is consistent with D31 — a half-reconciled record
+rather than dropping what tripped them, which is consistent with D40 — a half-reconciled record
 is worse than none — but it means one bad topic costs the whole twelve-minute run.
 
 **What is still not checked, and cannot be from here.** A summary that contradicts the statuses
@@ -1111,7 +1116,7 @@ risk is not acceptable by Sunday.
 
 ---
 
-## D34 — 2026-09-19 — Accepted *(supersedes D21's base64 encoding, not its trust boundary)*
+## D43 — 2026-09-19 — Accepted *(supersedes D21's base64 encoding, not its trust boundary)*
 **The record goes into the answering prompt as plain JSON, not base64. The context the model is
 served is configuration, and a record that does not fit is refused rather than truncated.**
 

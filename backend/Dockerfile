@@ -21,7 +21,7 @@ COPY backend/ backend/
 # volume compose mounts read-only; extraction is the only writer. config.py reads them as
 # STATEMENTS_FILE_PATH and RECONCILED_FILE_PATH — these names have to match what extraction's
 # Dockerfile sets, or the backend silently falls back to the bundled mock files. ANSWER_SOURCE
-# picks which one it answers from, and defaults to the reconciled file. See D28 and D31.
+# picks which one it answers from, and defaults to the reconciled file. See D28 and D40.
 ENV STATEMENTS_FILE_PATH=/data/statements.json \
     RECONCILED_FILE_PATH=/data/reconciled.json
 

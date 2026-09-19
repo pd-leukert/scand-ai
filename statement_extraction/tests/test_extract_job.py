@@ -186,7 +186,7 @@ def test_the_run_reports_what_the_reconciled_file_costs_in_context(
     printed = capsys.readouterr().out
     assert "statements.json" in printed and "reconciled.json" in printed
     # The line is what whoever sets OLLAMA_CONTEXT_LENGTH reads, so it names the variables
-    # rather than leaving the number to be acted on by someone who knows what it means (D34).
+    # rather than leaving the number to be acted on by someone who knows what it means (D43).
     assert "tokens in the answering context" in printed
     assert "OLLAMA_CONTEXT_LENGTH and LLM_NUM_CTX above" in printed
 

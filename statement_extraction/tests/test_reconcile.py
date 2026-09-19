@@ -490,7 +490,7 @@ def test_a_topic_for_every_statement_stops_the_pass():
 
 def test_one_topic_holding_most_of_the_record_stops_the_pass():
     """The opposite of fragmentation, and the failure neither earlier gate can see: a run whose
-    every statement lands in one bucket. See D33."""
+    every statement lands in one bucket. See D42."""
     records = [record(n) for n in range(1, 11)]
     chat = dispatching(["a"] * 9 + ["b"])
     with pytest.raises(ReconcileError, match="collapsed"):
@@ -507,7 +507,7 @@ def test_exactly_the_allowed_topic_share_passes():
 
 def test_a_relation_chain_that_flags_the_whole_topic_stops_the_pass():
     """A model that links each statement to the next one in the list marks nearly everything
-    never-true, and `corrects` is not date-guarded, so nothing else rejects it. See D33."""
+    never-true, and `corrects` is not date-guarded, so nothing else rejects it. See D42."""
     records = [record(n, stated_on=f"2025-01-{n:02d}") for n in range(1, 5)]
     chain = [link(f"S{n + 1}", f"S{n}", "corrects") for n in range(1, 4)]
     chat = dispatching(["a"] * 4, relations=chain)
@@ -596,7 +596,7 @@ def test_the_gate_stops_a_flagged_statement_no_problem_names():
 
 def test_a_summary_that_states_a_figure_the_topic_does_not_is_dropped():
     """The highest-value invention in a derived artifact is a number: the archive is full of
-    half-said percentages, and a summary that completes one has invented a source. See D33."""
+    half-said percentages, and a summary that completes one has invented a source. See D42."""
     topic, dropped = run(
         pair(), summary={"text": "Remediation is at 60 percent.", "statements": ["S1"]}
     )

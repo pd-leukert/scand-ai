@@ -24,7 +24,7 @@ record says, not the polite version.
 |---|---|---|
 | 1 | **Cite everything** — document, and where in it | In scope for the MVP. Every claim carries document, location, and the verbatim span it came from. No citation means we treat it as a guess. |
 | 2 | **Suggestion ≠ commitment** | In scope. Extraction records what kind of speech act a statement is, who made it, and for whom they spoke. |
-| 3 | **Know stale from wrong** | In scope. A second LLM pass groups the statements by topic, writes explicit supersedes / corrects / contradicts links between them, and derives a status for each from those links — never from dates. See [D31](docs/decisions.md), which supersedes D4 and D16. |
+| 3 | **Know stale from wrong** | In scope. A second LLM pass groups the statements by topic, writes explicit supersedes / corrects / contradicts links between them, and derives a status for each from those links — never from dates. See [D40](docs/decisions.md), which supersedes D4 and D16. |
 | 4 | **Delete a person** | In scope, with a deliberate and documented interpretation. See [D3](docs/decisions.md) and [D19](docs/decisions.md). |
 | 5 | **Do one thing unasked** | Not yet chosen — [Q1](docs/open-questions.md). Candidates and evidence in [roadmap](docs/roadmap.md). |
 | — | **Residency** — the archive stays in the EU | In scope and structural: Verda, local Ollama, no external model APIs. See [architecture](docs/architecture.md#residency). |
@@ -106,7 +106,7 @@ They are independent, so a partial set runs in a half-state rather than failing 
 model on CPU will crawl, not error, and a missing `OLLAMA_DATA_DIR` silently re-downloads
 tens of gigabytes it already has. The `ollama-pull` job prints the configuration it
 resolved and warns on all of those, so check the top of its deploy log
-([D26](docs/decisions.md), [D34](docs/decisions.md)).
+([D26](docs/decisions.md), [D43](docs/decisions.md)).
 
 **`OLLAMA_CONTEXT_LENGTH` is the one that decides whether the thing answers at all.** D2
 puts the entire reconciled record in every prompt, and the full 45-document corpus is well
@@ -135,7 +135,7 @@ model store (a named volume on a laptop, the `OLLAMA_DATA_DIR` bind on the VM) b
 extraction or the backend start, so the first question can never hit a missing model; a
 re-pull of a model that is already there is a no-op, so only the first run is slow. All three models are configuration —
 `LLM_MODEL` for answering, `EXTRACTION_LLM_MODEL` for extraction and `RECONCILE_LLM_MODEL`
-for the reconciliation pass, each defaulting to the one before it (D31). See [decision D23](docs/decisions.md) for the Ollama service and
+for the reconciliation pass, each defaulting to the one before it (D40). See [decision D23](docs/decisions.md) for the Ollama service and
 [D25](docs/decisions.md) for the laptop/VM switch.
 
 ## Status
