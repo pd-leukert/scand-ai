@@ -1061,6 +1061,7 @@ an earlier failed attempt, not as current.
 ---
 
 ## D36 — 2026-09-19 — Accepted
+<<<<<<< Updated upstream
 **Fixes a production crash: `EXTRACTION_NUM_CTX`'s default raised 8192 → 32768, and one
 document's malformed model response no longer takes down the whole extraction run.**
 
@@ -1100,3 +1101,165 @@ D35 already accepted for other empty-document cases, extended to a new cause of 
 The stderr line (`"{doc_id}: extraction call failed (...)"`) is what distinguishes "the
 model genuinely found nothing" from "the call broke" in the log; nothing enforces that
 distinction downstream, since both feed the same `empty` list and the same exit code.
+=======
+**The statements file groups statements under their document. `document_id`, `document_type`,
+`document_date`, the people involved and a document summary are carried once per document,
+not once per statement — `id`, `document_id` and `document_date` are no longer written on
+each statement at all, since they are cheaper to derive than to store.**
+
+Direction from Niek: cut the token cost of the statements file, which D2 already flagged as
+an unmeasured "hard ceiling" because the whole file goes into the answering model's context
+on every question. Every statement previously repeated its full document id (a path like
+`transcripts/07_2024-11-12_ordering-logic-design`), its document type and its document date
+verbatim — the same handful of strings, once per statement, on documents that run into dozens
+of statements each. None of that varies within a document, so none of it needs to.
+
+Shape: `{"documents": [{"id", "type", "date", "people", "summary", "statements": [...]}]}`.
+Each entry in `statements` carries only what genuinely varies per statement — `location`
+(line range plus D14's genre-specific pointer), `verbatim_span`, `claim`, `speech_act`,
+`handling`, `actor`, `agreed_by`, `statement_date` — and nothing document-level. `id` is
+gone too: extraction already assigns `f"{doc.doc_id}#{position}"` internally to link
+agreements (D28); backend/src/app/statements.py's `load_statements()` now derives the same
+string from array position when it flattens the file back into the `Statement` shape
+`llm_client.py`, `schemas.py` and the frontend already had — that shape does not change, so
+nothing downstream of `load_statements()` had to.
+
+**`people` and `summary` are new, both read off the document rather than invented.**
+`documents.py`'s `Document` gains a `summary` field: a transcript's `Meeting:` header line,
+or a thread's `Subject:` line (the topmost message's, since threads run newest-first) — the
+document's own summary of itself, in its own words, from its first few lines. `people` reuses
+the existing `attendees` mechanism: transcripts already had it from the `Attendees:` header;
+threads previously left it empty, and now get it populated from the set of actual message
+senders, since a thread has no attendee header and "who sent something" is the honest
+substitute for "who was in the room."
+
+**The same regrouping is reapplied in `backend/src/app/llm_client.py`, not just in the file
+on disk.** The file's shape only pays off if the backend forwards it that way: D2's actual
+cost is the payload rebuilt and resent to the model on every question, not the file at rest,
+which is loaded once and cached. `_grouped_payload()` regroups the flattened `Statement`
+objects back by `document_id` before base64-encoding, so `document_id`/`document_date` still
+appear once per document in `STATEMENTS_B64`, not once per statement. Citation resolution
+(D21) is untouched: statements still carry their own explicit `id` in this payload, so the
+model still cites exactly as it always has — only the JSON shape around each statement
+changed, not the trust mechanism.
+
+**What is explicitly *not* dropped, despite an interrupted earlier edit on this branch doing
+so:** `location` and `verbatim_span`. Both vary per statement, so hoisting does not apply to
+them, and CLAUDE.md rule 1 requires a real location and a real verbatim span on every
+citation — cutting either would fail provenance outright, not just shrink the file. A
+half-finished diff on this branch had removed both (along with `id`, `document_id`,
+`handling`, `agreed_by`, `role` and more) before this entry; that direction is reversed here.
+`role` and `agreed_by` are kept for the same reason — they are statement/actor-level, not
+document-level, and `agreed_by` in particular is half of requirement 2's score.
+
+Also dropped, deliberately, as real dead weight rather than as part of the hoisting: `label`
+on the actor (already folded into `name`, never read separately by anything downstream) and
+`location.page` (the corpus has no PDFs — D14 already retired the concept; the field stays on
+the backend's `Location` model, defaulting to `None`, since removing it there is a separate,
+unrequested schema change).
+
+Rejected:
+- *Leaving `document_id`/`document_type`/`document_date` on every statement and only adding
+  `people`/`summary` at the document level.* Half the ask — it adds the requested fields but
+  does nothing about the repetition that is the actual "massively reduce tokens" complaint.
+- *Writing an explicit `id` per statement even after grouping.* Either it repeats the
+  document id inside the group (defeats the point) or it's a bare per-statement counter that
+  still has to be written and read for no information a reader can't already get by counting
+  array position.
+- *Stopping at the file on disk and leaving `_build_messages` flattening everything back out.*
+  Correct-looking but pointless: the file is loaded once per process (D2's caching); the
+  model payload is rebuilt on every question, which is where the token count that motivated
+  this actually lives.
+
+*Cost:* `load_statements()` now does real reconstruction work (deriving ids, pulling
+`document_id`/`document_date` back onto every `Statement`) instead of a straight parse, and
+that reconstruction is now the one place the id scheme (`f"{document_id}#{position}"`) has to
+agree with what `extraction.py` computes internally for the exact same purpose — currently
+kept in sync by convention (both are "array position, 1-indexed"), not by shared code, since
+they live in different services with no shared library between them (D9 keeps them on one
+lockfile, not one codebase). If either side's numbering ever changes independently, agreed-by
+receipts and citation ids go out of sync silently rather than erroring. `people` for threads
+is derived from senders, not a real attendee list (threads have none) — it will list someone
+who sent one message and nothing else alongside someone central to the thread, with no way to
+tell the two apart from `people` alone.
+
+---
+
+## D37 — 2026-09-19 — Accepted, supersedes part of D36
+
+**A persisted statement carries exactly `claim`, `actor` (`name`, `organization`),
+`speech_act`, `statement_date` — nothing else. `location`, `verbatim_span`, `agreed_by` and
+`actor.role` are removed from the statements file, from the backend's `Statement`/`Citation`
+models, from the answering prompt, and from what the frontend renders.**
+
+Direction from Niek: he asked for exactly this shape for `statements.json`, given as a
+literal example with these four fields and no others. I flagged, before making the change,
+that it reverses the part of D36 that explicitly kept `location` and `verbatim_span` (D36
+called removing them "a half-finished diff on this branch" and reversed it), and that
+CLAUDE.md rule 1 requires a citation to point at "a real location... and a verbatim span
+that actually appears there" — without them the system can no longer show the receipt the
+rubric's provenance slice (25%, [data-model.md](data-model.md)) is built to reward, and
+dropping `agreed_by`/`role` cuts into part of the attribution slice (20%) the same document
+describes. Niek confirmed he wanted the literal shape regardless. This entry is that
+argument, on the record, per CLAUDE.md's "argue in a new entry" rule — it does not overrule
+D36's reasoning, it overrides it on this project's owner's explicit instruction.
+
+**What actually changed, concretely:**
+- `statement_extraction/src/app/output.py`'s `to_statement()` needed no code change — a
+  prior, uncommitted, half-finished edit on this branch had already reduced it to this exact
+  shape (the same one D36 reversed). That edit is now the intended final state, not an
+  interruption to fix.
+- `statement_extraction/src/app/extraction.py` is untouched: it still asks the model for
+  `span`, `role`, `handling` and still runs `link_agreements`, and `extract_document` still
+  validates a claim's span against the real unit text before accepting it. None of that is
+  wasted: span-matching is still extraction's only defence against a hallucinated claim, it
+  is just no longer written to the file (`to_statement` already only reads `claim`, `act`,
+  `actor.name`/`actor.org`, `stated_on` off the record — "extra fields ride along" per its
+  own docstring). Whether to also stop computing `role`/`agreed_by` internally, now that
+  nothing downstream reads them, is left open — see Rejected.
+- `backend/src/app/statements.py`: `Location` model deleted; `Actor` loses `role`;
+  `Statement` and `_StatementBody` lose `location`, `verbatim_span`, `agreed_by`, gain
+  `claim: str`.
+- `backend/src/app/schemas.py`: `Citation` loses `location`, `verbatim_span`, `agreed_by`,
+  gains `claim: str`.
+- `backend/src/app/llm_client.py`: the system prompt no longer tells the model statements
+  carry a location, verbatim text, role or agreed-by list; rule 2 (agreements/decisions) no
+  longer conditions on `agreed_by`, since there is nothing to condition on — the model is
+  told to trust `speech_act` alone and never to name a specific agreeing party unless that
+  party's own statement is the agreement; rule 3 drops "and role". `_resolve_citations` and
+  `_dummy_answer` build citations/sentences from `claim` instead of `verbatim_span`, and
+  drop role from the actor description.
+- `backend/src/app/data/mock_statements.json`: rewritten to the new shape; each
+  `verbatim_span` was turned into a `claim` (a plain-sentence paraphrase, by hand, in the
+  style `extraction.py`'s prompt asks the model for) since a claim did not previously exist
+  on the mock data.
+- `frontend/app.py`: `location_label()` deleted; `render_source_row()` no longer shows role,
+  location, or an expand/collapse "Show quote" — there is no verbatim quote left to reveal,
+  so the claim is shown inline instead, unconditionally. The agreed-by line is gone.
+- `docs/data-model.md`: the provenance and attribution sections now say, per field, whether
+  it is still stored, rather than describing a shape the code no longer produces.
+
+**What this costs, plainly:** a citation from this system now points a judge at a document
+and a paraphrased claim, attributed to a named person at a named organisation, dated — not
+at a real line range and not at a verbatim quote they can diff against the source file. That
+is a real reduction against the provenance slice of the rubric this corpus was built to
+score, not a cosmetic one. Extraction's span-matching still guarantees the claim is grounded
+in real text at extraction time, but that guarantee is no longer independently checkable by
+a judge from the output, which was the entire point of carrying the span forward. Deletion
+still has one place to reach — the claim replaces the verbatim span as the place a redacted
+name can hide (see [data-model.md](data-model.md), "What deletion has to touch") — so CLAUDE.md
+rule 3/4 are not affected, only rule 1.
+
+Rejected:
+- *Keeping `location`/`verbatim_span` and only trimming `agreed_by`/`role`.* This was the
+  first option offered; Niek explicitly chose the fuller cut instead.
+- *Also stripping `role`/`agreed_by`/`handling` out of extraction's own schema and prompt,
+  and deleting `link_agreements` entirely, since nothing downstream reads their output any
+  more.* Not done here — that is a real efficiency win (fewer model calls per document) but
+  a separate, larger change to `extraction.py`'s tested internals than "change the output
+  shape", and this entry's scope is the persisted/served shape, not extraction's internal
+  validation machinery. Left as a known follow-up, not silently decided either way.
+- *Renaming `Citation` or its fields to signal it is no longer a verified quote.* Not done —
+  out of scope for a schema-shape change and not requested; the cost above is recorded here
+  instead of encoded in a new name.
+>>>>>>> Stashed changes

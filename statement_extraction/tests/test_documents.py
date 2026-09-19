@@ -67,6 +67,7 @@ Confirmed.
 def test_teams_turns_carry_names_and_elapsed_positions():
     doc = parse_document(TEAMS, "transcripts/x", "transcript")
     assert doc.doc_date == "2024-03-20"
+    assert doc.summary == "Kickoff"
     assert doc.attendees == {"Ann Lee": "Acme", "Bo Ray": "RELEX", "Cy Doe": "Acme CFO, joins late"}
     assert [unit.name for unit in doc.units] == ["Ann Lee", "Bo Ray"]
     assert [(line.no, line.text, line.position) for line in doc.units[1].lines] == [
@@ -99,6 +100,8 @@ def test_internal_transcript_has_labels_and_no_names():
 def test_thread_messages_count_from_the_top_and_drop_the_banner():
     doc = parse_document(THREAD, "emails/z", "email")
     assert doc.doc_date == "2025-11-24"
+    assert doc.summary == "Field exclusion"
+    assert doc.attendees == {"Ann Lee": "", "Bo Ray": ""}
     assert [(unit.name, unit.sent) for unit in doc.units] == [
         ("Ann Lee", "2025-11-24"),
         ("Bo Ray", "2025-11-19"),

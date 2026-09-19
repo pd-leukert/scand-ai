@@ -219,6 +219,8 @@ def _when(record: dict) -> tuple[int, ...]:
 
 def _header(doc: Document) -> str:
     lines = [f"Document: {doc.doc_id}", f"Kind: {doc.doc_type}", f"Date: {doc.doc_date}"]
+    if doc.summary:
+        lines.append(f"Summary: {doc.summary}")
     if doc.attendees:
         people = [f"{name} ({note})" if note else name for name, note in doc.attendees.items()]
         lines.append("Attendees: " + ", ".join(people))

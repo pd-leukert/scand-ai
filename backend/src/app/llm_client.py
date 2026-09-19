@@ -31,20 +31,23 @@ CITATION_DELIMITER = "===CITATIONS==="
 SYSTEM_PROMPT = f"""You are the answering agent for a rollout decision record.
 
 You will be given the complete set of statements extracted from a year of project \
-documents, base64-encoded as a JSON array under STATEMENTS_B64. Decode it before \
-answering. Each statement has an id, the document it came from, a location inside that \
-document, the verbatim text it was extracted from, who said it (with their organisation \
-and role at the time), who — if anyone — agreed to it, what kind of speech act it is \
-(proposal, agreement, decision, report, question, objection), and when it was said.
+documents, base64-encoded under STATEMENTS_B64 as a JSON array grouped by document. Decode \
+it before answering. Each entry is one document, and has the document's id and date once, \
+plus a list of its statements. Each statement has an id, a claim (one plain sentence \
+saying what was stated), who said it (with their organisation), what kind of speech act it \
+is (proposal, agreement, decision, report, question, objection), and when it was said. \
+There is no verbatim quote and no line location on a statement — the claim is the only \
+record of what was said.
 
 Rules, no exceptions:
 1. Answer only from the statements given. Never use outside knowledge. If nothing in the \
 statements answers the question, say so plainly: "The record does not say."
 2. A proposal or suggestion is not a commitment. Only report something as agreed or \
-decided if a statement's speech_act says so, and for agreements, only if someone is \
-listed under agreed_by. If nobody agreed, say that explicitly.
-3. Use each person's organisation and role as recorded on the statement you are citing, \
-not any role they hold elsewhere in the record.
+decided if a statement's speech_act says so (agreement or decision). The statements do \
+not record who agreed to what beyond that — do not claim a specific person agreed unless \
+their own statement is itself the agreement or decision.
+3. Use each person's organisation as recorded on the statement you are citing, not any \
+organisation they hold elsewhere in the record.
 4. If two statements conflict, report the conflict and cite both. Do not decide which one \
 is current — you have no way to know that, and guessing is worse than saying so.
 5. Cite every factual claim. Mark it inline with a bracketed number, e.g. [1], in the \
@@ -57,8 +60,27 @@ that appear in the statements you were given — never invent one.
 """
 
 
+def _grouped_payload(statements: dict[str, Statement]) -> list[dict]:
+    """The statements regrouped by document for the model's context: document_id and
+    document_date appear once per document instead of once per statement — the same
+    reduction the statements file itself uses on disk (docs/decisions.md D36), reapplied
+    here because this payload is what actually gets rebuilt and resent on every question
+    (D2), which is where the token count actually matters."""
+    groups: dict[str, dict] = {}
+    for statement in statements.values():
+        dumped = statement.model_dump(mode="json")
+        document_id = dumped.pop("document_id")
+        document_date = dumped.pop("document_date")
+        group = groups.setdefault(
+            document_id,
+            {"document_id": document_id, "document_date": document_date, "statements": []},
+        )
+        group["statements"].append(dumped)
+    return list(groups.values())
+
+
 def _build_messages(question: str, statements: dict[str, Statement]) -> list[dict[str, str]]:
-    payload = json.dumps([s.model_dump(mode="json") for s in statements.values()])
+    payload = json.dumps(_grouped_payload(statements))
     encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -92,10 +114,8 @@ def _resolve_citations(
                 marker=marker,
                 statement_id=statement.id,
                 document_id=statement.document_id,
-                location=statement.location,
-                verbatim_span=statement.verbatim_span,
+                claim=statement.claim,
                 actor=statement.actor,
-                agreed_by=statement.agreed_by,
                 speech_act=statement.speech_act,
                 statement_date=statement.statement_date,
                 document_date=statement.document_date,
@@ -113,9 +133,9 @@ def _dummy_answer(statements: dict[str, Statement]) -> tuple[str, list[str]]:
     if not picked:
         return "The record is empty; there is nothing to cite.", []
     sentences = [
-        f"{statement.actor.name} ({statement.actor.role}, {statement.actor.organization}) "
+        f"{statement.actor.name} ({statement.actor.organization}) "
         f"{statement.speech_act} on {statement.document_date}: "
-        f"“{statement.verbatim_span}” [{marker}]."
+        f"{statement.claim} [{marker}]."
         for marker, statement in enumerate(picked, start=1)
     ]
     prose = (
