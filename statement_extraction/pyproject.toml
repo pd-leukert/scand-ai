@@ -5,9 +5,9 @@ description = "Offline statement extraction service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi[standard]>=0.141.1",
-    "uvicorn[standard]>=0.53.0",
+    "httpx>=0.28.1",
 ]
 
-[tool.fastapi]
-entrypoint = "src.app.main:app"
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

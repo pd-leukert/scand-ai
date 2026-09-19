@@ -22,6 +22,9 @@ class Location(BaseModel):
     page: int | None = None
     line_start: int
     line_end: int
+    # The genre-specific pointer D14 asks for: the utterance offset for a transcript, or
+    # "message N of M" for an email thread or report. None for statements without one.
+    position: str | None = None
 
 
 class Actor(BaseModel):

@@ -17,12 +17,14 @@ RUN uv sync --locked --package statement-extraction --no-install-workspace
 
 COPY statement_extraction/ statement_extraction/
 
-# Where this job writes the statements file. It is the only writer.
-ENV STATEMENTS_PATH=/data/statements.json
+# The archive is baked into the image, so the job needs nothing mounted. See D18.
+COPY input/ input/
+
+# Where this job writes the statements file. It is the only writer. Same variable name the
+# backend reads (config.py) — one name for the one artifact, not two that have to agree.
+ENV STATEMENTS_FILE_PATH=/data/statements.json
 
 WORKDIR /app/statement_extraction
-EXPOSE 8000
 
-# The command from statement_extraction/README.md, minus dev reload. This container is a
-# job: it is expected to exit 0, and compose holds the other two until it does.
-CMD ["uv", "run", "--frozen", "fastapi", "run"]
+# A job, not a server: run the extraction script and exit. See D28.
+CMD ["uv", "run", "--frozen", "python", "-m", "src.app.extract"]
