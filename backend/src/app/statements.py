@@ -19,8 +19,8 @@ document and a paraphrased claim, not at a real line range or a verbatim quote.
 from __future__ import annotations
 
 import json
+import os
 from datetime import date, datetime
-from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -68,19 +68,19 @@ class StatementsFile(BaseModel):
     documents: list[_DocumentBlock]
 
 
-@lru_cache
 def load_statements(path: str) -> dict[str, Statement]:
-    """Load the statements file once per process, flatten it to one Statement per line and
-    index by statement id.
+    """Read the statements file, flatten it to one Statement per line and index by
+    statement id.
 
     id is derived from the statement's position in its document's array —
     "<document id>#<position>", 1-indexed — the same scheme extraction.py uses internally
     to link agreements, just never written to the file since it is reconstructible for free.
 
-    Cached by path: the file is treated as static for the lifetime of the process, same as
-    D2 assumes for what goes into the model's context.
+    Read on every request, never cached: a cached copy is a second place a deleted person
+    survives, and deletion rewrites the file (D44). A rewrite is whole-or-nothing, so a request
+    sees the file from before it or after it, never half of each.
     """
-    parsed = StatementsFile.model_validate(json.loads(Path(path).read_text()))
+    parsed = StatementsFile.model_validate(json.loads(Path(path).read_text(encoding="utf-8")))
     return {
         statement.id: statement
         for document in parsed.documents
@@ -97,3 +97,23 @@ def load_statements(path: str) -> dict[str, Statement]:
             for position, body in enumerate(document.statements, start=1)
         )
     }
+
+
+def write_statements(path: str, documents: list[dict]) -> None:
+    """Replace the statements file with `documents`, whole or not at all.
+
+    Deletion is the only thing in this service that writes the file (D46). The write goes to a
+    temporary file and is renamed over the old one, so a request that arrives mid-deletion reads
+    the file from before it or after it, never half of each — the guarantee load_statements()
+    above relies on. The same whole-or-nothing write extraction uses when it first creates the
+    file; the two are deliberately not shared, since a helper spanning both packages would be one
+    more thing to trace at 2am.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(
+        json.dumps({"documents": documents}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(tmp, target)

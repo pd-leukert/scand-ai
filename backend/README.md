@@ -2,12 +2,39 @@
 
 Live web service for processing user requests. Gathers the `Statement DB` and exposes a RESTful API to the frontend.
 
-It reads the statements file and **nothing else** — not the source documents, not
-extraction, not the model's own knowledge. If the statements do not support an answer, the
+The answering path reads the statements file and **nothing else** — not the source documents,
+not extraction, not the model's own knowledge. If the statements do not support an answer, the
 answer is that the record is silent. See [CLAUDE.md](../CLAUDE.md) rule 2 and
 [docs/architecture.md](../docs/architecture.md).
 
+This service also deletes a person from that file ([D46](../docs/decisions.md)), which is the
+one thing here that writes it. It is off the answering path: no model call, no source document.
+
 Run with `uv run fastapi dev` from the `backend` folder.
+
+The file is read on every request and never cached, so a deletion (which rewrites it) shows up
+in the next answer with no restart ([D44](../docs/decisions.md)).
+
+## Deleting a person
+
+`POST /delete` with `{"name": "Kwame Boateng"}` rewrites the statements file — every spelling of
+that person replaced by a role placeholder, everyone else left named — and returns the receipt:
+who was removed, what the file says in their place, who else the name could have meant and was
+kept, and what was deliberately left in place. `deleted: null` means nobody by that name is in
+the file and nothing changed; 503 means there is no statements file. The frontend's "Delete a
+person" button is the judge-facing path to it.
+
+The same operation from a terminal, against `STATEMENTS_FILE_PATH`:
+
+```
+uv run python -m src.app.delete "Kwame Boateng" [--dry-run]
+docker compose exec backend uv run --frozen python -m src.app.delete "Kwame Boateng"
+```
+
+There is no backup and no undo — a copy of the file from before would be a second place the
+person survives. Without `STATEMENTS_FILE_PATH` set, both paths act on the bundled mock file.
+How it resolves a person and what it cannot reach: [docs/deletion.md](../docs/deletion.md),
+[D42 to D47](../docs/decisions.md).
 
 ## Configuration
 

@@ -68,14 +68,20 @@ The cost of this choice is that no single extraction call can see that a later d
 reversed an earlier decision — which is exactly why currency is out of MVP scope and needs
 a second pass over the aggregated table. See [roadmap.md](roadmap.md).
 
-It is a FastAPI service rather than a script so that re-extraction of a single document,
-and later the deletion operation, can be triggered without redeploying anything.
+It is packaged as a container rather than a script so a re-extraction can be started without
+redeploying anything. Deletion is *not* here: it has to be reachable while the system is
+running, and this job has exited by then, so it lives in the backend (D46).
 
 ### 3. backend — the customer-facing API
 
 Python/FastAPI, its own container. Takes a user question over REST, puts the statements
 file in the model's context, asks the local LLM to answer *from the statements only*, and
 returns the answer together with its citations.
+
+It is also the service that deletes a person: `POST /delete` rewrites the statements file
+and returns the receipt (D46, D47). That is the one thing in the system that writes the
+derived artifact while it is running, and it is deliberately not on the answering path —
+it calls no model and reads no source document. The volume is mounted read-write for it.
 
 The rule this service exists to enforce: **the model answers from the statements file, not
 from its own knowledge.** A claim that cannot point at a statement, and through it at a
@@ -139,7 +145,8 @@ otherwise.
   record", not an improvised read of the source document.
 - **The statements file is the only thing the backend reads.** Not the PDFs. This is what
   makes deletion meaningful: there is exactly one derived artifact, so "gone from
-  everything we derived" is a claim we can actually verify.
+  everything we derived" is a claim we can actually verify. It is also the only thing the
+  backend writes, and only on a deletion (D46).
 - **The frontend holds no logic.** Anything it computes is something we would have to
   delete from twice.
 

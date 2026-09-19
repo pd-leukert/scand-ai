@@ -30,9 +30,19 @@ STYLE = """
   --bg:#fafafa; --surface:#ffffff; --text:#131c26; --text-muted:#5b6572; --text-faint:#8a93a0;
   --border:#e4e8ec; --border-strong:#d3d9e0; --accent:#1668a5; --accent-hover:#0f5488;
   --accent-soft:#e4eef7; --navy:#0b3049; --chip-bg:#f1f3f5;
+  --danger:#8a2c2c; --danger-hover:#6f2323;
   /* One column the header, the ask state and the answer state all share, so the brand,
      the ask bar and every answer line start at the same x. Change it in one place. */
   --content-width:880px; --gutter:32px;
+  /* The header is a fixed height rather than whatever its tallest control happens to be,
+     because the hero subtracts it to fill the viewport. Before this, adding the always-on
+     "Delete a person" button grew the header to 81px while the hero still subtracted a
+     hard-coded 73px. */
+  --header-height:72px;
+  /* Light only, on purpose: .streamlit/config.toml pins Streamlit's own widgets to the same
+     tokens, and this pins what the browser paints for us — form controls, scrollbars,
+     autofill — so a dark-mode laptop cannot turn half the page dark (D48). */
+  color-scheme:light;
 }
 html, body, .stApp{background:var(--bg) !important;color:var(--text);
   font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;}
@@ -42,20 +52,22 @@ html, body, .stApp{background:var(--bg) !important;color:var(--text);
 /* Streamlit's own vertical-block gap beats a plain class selector on specificity;
    !important on every section override below is what actually wins. */
 div[data-testid="stVerticalBlock"]{gap:0;}
+/* Streamlit sizes a markdown element's box on the assumption that its last child carries the
+   default 1rem bottom margin, and cancels that margin again when it lays the block out. Our
+   components set margin:0, so every one of them measured 16px shorter than its text and the
+   next control landed on top of it — the "Delete permanently" button over its own warning.
+   Giving the last child the margin back costs no visible space and fixes all of them (D48). */
+[data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:1rem !important;}
 button p{margin:0;}
-/* Streamlit pulls every markdown container up by 16px to cancel the bottom margin of a
-   trailing markdown paragraph. Every container here holds our own HTML with explicit
-   margins, so there is nothing to cancel and the pull just eats the spacing below — the
-   header's logo and the gap under the hero subtitle both lost 16px to it. */
-[data-testid="stMarkdownContainer"]{margin-bottom:0 !important;}
 
 /* header bar */
 .st-key-header{background:var(--surface);border-bottom:1px solid var(--border);}
-/* 20px + a 32px logo + 20px + the 1px border below = the 73px the hero's min-height
-   already subtracts. */
 .st-key-header [data-testid="stHorizontalBlock"]{align-items:center !important;
+  /* min-height, not height: Streamlit sizes these boxes itself and a height declaration
+     here is simply ignored (the same wall D48 hit forcing height:auto). */
+  min-height:var(--header-height) !important;
   max-width:var(--content-width) !important;width:100% !important;margin:0 auto !important;
-  padding:20px var(--gutter) !important;justify-content:space-between !important;}
+  padding:0 var(--gutter) !important;justify-content:space-between !important;}
 .st-key-header [data-testid="stHorizontalBlock"] > div{
   flex:0 0 auto !important;width:auto !important;}
 .sc-brand{display:flex;align-items:center;gap:10px;}
@@ -76,7 +88,8 @@ button p{margin:0;}
 .st-key-header button:hover p{color:var(--text) !important;}
 
 /* hero / ask state */
-.st-key-hero{min-height:calc(100vh - 73px);display:flex !important;flex-direction:column !important;
+.st-key-hero{min-height:calc(100vh - var(--header-height) - 1px);
+  display:flex !important;flex-direction:column !important;
   align-items:center !important;justify-content:center !important;gap:32px !important;
   max-width:var(--content-width);margin:0 auto;padding:32px var(--gutter);}
 /* Streamlit's own generated heading rule (element+class) ties this class selector's
@@ -162,6 +175,36 @@ button p{margin:0;}
   line-height:16px;vertical-align:2px;}
 .sc-empty-note{font-family:'IBM Plex Sans',sans-serif;font-size:13px;color:var(--text-faint);
   margin-top:12px;}
+
+/* delete-a-person dialog */
+/* This row is nested inside the header, so the header rule above (a descendant selector)
+   also lands on it — undo the column sizing here, or the two buttons get spread to the
+   full content width instead of sitting together. */
+.st-key-header_actions [data-testid="stHorizontalBlock"]{padding:0 !important;gap:8px !important;
+  max-width:none !important;width:auto !important;margin:0 !important;
+  justify-content:flex-end !important;}
+[data-testid="stDialog"] [data-testid="stVerticalBlock"]{gap:14px !important;}
+[data-testid="stDialog"] section{background:var(--surface) !important;border-radius:16px;}
+[data-testid="stDialog"] h2{font-family:'Space Grotesk',sans-serif !important;font-size:20px;
+  font-weight:600;color:var(--text);}
+[data-testid="stDialog"] [data-testid="stTextInputRootElement"]{border-radius:10px;
+  background:var(--bg) !important;border:1px solid var(--border-strong) !important;}
+[data-testid="stDialog"] input{font-family:'IBM Plex Sans',sans-serif;font-size:15px;
+  color:var(--text) !important;}
+.st-key-confirm_deletion button{background:var(--danger) !important;border:none !important;
+  border-radius:10px;height:40px;padding:0 18px;}
+.st-key-confirm_deletion button:hover{background:var(--danger-hover) !important;}
+.st-key-confirm_deletion button p{color:#fff !important;font-weight:600;}
+.st-key-close_deletion button{border:1px solid var(--border-strong) !important;
+  background:var(--surface) !important;border-radius:10px;height:40px;padding:0 18px;}
+.sc-dialog-note{font-family:'IBM Plex Sans',sans-serif;font-size:14px;line-height:22px;
+  color:var(--text-muted);margin:0;}
+.sc-dialog-warn{font-family:'IBM Plex Sans',sans-serif;font-size:14px;line-height:22px;
+  color:var(--danger);font-weight:600;margin:0;}
+.sc-receipt{display:flex;flex-direction:column;gap:8px;}
+.sc-receipt p{margin:0;font-family:'IBM Plex Sans',sans-serif;font-size:15px;line-height:24px;
+  color:var(--text);}
+.sc-receipt .muted{color:var(--text-muted);font-size:13px;line-height:20px;}
 
 .sc-error{background:#fdf1f1;border:1px solid #e8b4b4;border-radius:16px;padding:20px 24px;
   color:#8a2c2c;font-family:'IBM Plex Sans',sans-serif;font-size:14px;line-height:22px;}
@@ -289,6 +332,111 @@ def stream_backend(question: str, result: dict) -> Iterator[str]:
         result["error"] = f"Could not reach the backend: {exc}"
 
 
+def request_deletion(name: str) -> dict:
+    """Asks the backend to delete a person and hands back its receipt, or {"error": ...}.
+
+    Shown once and then dropped — the receipt names the person, and keeping it anywhere would
+    undo the deletion (docs/decisions.md D42)."""
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/delete", json={"name": name}, timeout=REQUEST_TIMEOUT
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.HTTPError as exc:
+        return {"error": _http_error_message(exc)}
+    except requests.RequestException as exc:
+        return {"error": f"Could not reach the backend: {exc}"}
+
+
+def deletion_confirmation_html(receipt: dict) -> str:
+    """A confirmation, not a receipt dump: who was removed, and who was deliberately kept.
+
+    The second half is the part that cannot be dropped. The archive holds two people sharing a
+    first name (docs/corpus.md), so a name still in the record after a deletion is either
+    another person we resolved and left on purpose, or a deletion that missed — and only this
+    says which (docs/deletion.md)."""
+    deleted = receipt.get("deleted")
+    requested = html.escape(receipt.get("requested", ""))
+    if deleted is None:
+        return (
+            f'<div class="sc-receipt"><p>No one called “{requested}” is in the record, so '
+            "nothing was changed. They may already be deleted.</p></div>"
+        )
+    count = deleted["statements_changed"]
+    lines = [
+        f"<p><strong>{html.escape(deleted['name'])}</strong> is gone from the record. "
+        f"{count} {'statement' if count == 1 else 'statements'} now read "
+        f"{html.escape(deleted['placeholder'])}.</p>"
+    ]
+    kept = [
+        html.escape(person["name"])
+        for person in receipt.get("considered", [])
+        if person["outcome"] == "left"
+    ]
+    if kept:
+        lines.append(
+            f'<p class="muted">{", ".join(kept)} stayed — a different person, kept by name.</p>'
+        )
+    lines += [
+        f'<p class="muted">Left in place: {html.escape(note)}.</p>'
+        for note in receipt.get("left_in_place", [])
+    ]
+    return f'<div class="sc-receipt">{"".join(lines)}</div>'
+
+
+@st.dialog("Delete a person")
+def deletion_dialog() -> None:
+    """Name, confirm, done. Streamlit reruns only this function while the dialog is open, so
+    the receipt lives in session state between the click and the confirmation."""
+    receipt = st.session_state.deletion_receipt
+    if receipt is None:
+        st.markdown(
+            '<p class="sc-dialog-note">Every spelling of that person is replaced by their '
+            "role, in the claims as well as the speaker fields. Everyone else stays named, "
+            "and the decisions around them keep answering.</p>",
+            unsafe_allow_html=True,
+        )
+        name = st.text_input(
+            "Name",
+            placeholder="Who should be deleted? e.g. Kwame Boateng",
+            key="deletion_name",
+            label_visibility="collapsed",
+        ).strip()
+        st.markdown(
+            '<p class="sc-dialog-warn">This rewrites the record and cannot be undone.</p>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Delete permanently", key="confirm_deletion", type="primary"):
+            if not name:
+                st.markdown(
+                    '<p class="sc-dialog-note">Type a name first.</p>', unsafe_allow_html=True
+                )
+                return
+            st.session_state.deletion_receipt = request_deletion(name)
+            # The dialog is a fragment, so only it reruns — and this run has already drawn the
+            # form above. Without the rerun the confirmation appears under a live
+            # "Delete permanently" button.
+            st.rerun(scope="fragment")
+    if receipt is None:
+        return
+    if receipt.get("error"):
+        st.markdown(
+            f'<div class="sc-error">{html.escape(receipt["error"])}</div>', unsafe_allow_html=True
+        )
+    else:
+        st.markdown(deletion_confirmation_html(receipt), unsafe_allow_html=True)
+    if st.button("Done", key="close_deletion"):
+        # The answer on screen was written before the deletion and can still name the person,
+        # so it goes with them. The next question is answered from the rewritten file.
+        st.session_state.deletion_receipt = None
+        st.session_state.question = None
+        st.session_state.answer = ""
+        st.session_state.citations = []
+        st.session_state.error = ""
+        st.rerun()
+
+
 def render_source_row(citation: dict) -> None:
     statement_id = citation["statement_id"]
     container_key = f"source_{statement_id}"
@@ -331,6 +479,7 @@ for key, default in {
     "answer": "",
     "citations": [],
     "error": "",
+    "deletion_receipt": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -339,14 +488,22 @@ with st.container(key="header"):
     left, right = st.columns(2)
     with left:
         st.markdown(BRAND_HTML, unsafe_allow_html=True)
-    if st.session_state.question:
-        with right:
-            if st.button("New question", key="new_question"):
-                st.session_state.question = None
-                st.session_state.answer = ""
-                st.session_state.citations = []
-                st.session_state.error = ""
-                st.rerun()
+    with right, st.container(key="header_actions"):
+        new_question_col, delete_col = st.columns(2)
+        if st.session_state.question:
+            with new_question_col:
+                if st.button("New question", key="new_question"):
+                    st.session_state.question = None
+                    st.session_state.answer = ""
+                    st.session_state.citations = []
+                    st.session_state.error = ""
+                    st.rerun()
+        with delete_col:
+            # Opened from here rather than from a session flag: Streamlit closes the dialog when
+            # the script reruns without this call, which is what the ✕ needs to work.
+            if st.button("Delete a person", key="open_deletion"):
+                st.session_state.deletion_receipt = None
+                deletion_dialog()
 
 if not st.session_state.question:
     hero_placeholder = st.empty()

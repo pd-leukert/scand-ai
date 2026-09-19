@@ -1385,14 +1385,351 @@ is ever added on the inference side (D40's own *Cost* note already flagged the b
 move as relevant to that), this ordering is the one to revisit — it optimizes for the
 single-question case at the expense of the repeated-question-same-corpus case, and D2 never
 measured either against real latency numbers.
-
 ---
 
 ## D42 — 2026-09-19 — Accepted
+**Deletion is one function over the statements file: resolve one person, replace every spelling in every text field, return a receipt. Refines D3 and D19.**
+
+`statement_extraction/src/app/deletion.py` takes the statements and a name and returns the redacted
+statements and a receipt. It reads nothing else and keeps nothing: the deleted name is not written
+anywhere, and the file keeps only the placeholder. The person is resolved from the statements alone
+(D19): the actor and `agreed_by` names, plus "First Last" pairs in the text whose first name belongs
+to a known actor, which is how a mentioned-only person such as Nadia Öberg turns up. Spellings that
+differ only by accents are one person (`Henrik Sørensen` and `Henrik Sorensen`). An exact full name
+wins outright; a bare first name picks the person with the most statements. A speaker the file only
+labels (`Guest 1`, `Them`) is never a person.
+
+What is replaced, in this order: the full name (either order), an email of the form
+`first.last@`, `f.last@` or `last.first@`, then the last name and the first name on their own, but
+only when nobody else in the file shares that name. Otherwise the bare name is left, and the
+receipt says who shares it. Every string field is swept except ids, dates, `position`,
+`speech_act`, `handling` and `doc_type`, so a field added later is covered by default. The
+placeholder is `[former RELEX employee]`, `[former customer employee]` or
+`[former partner employee]` from the organisation the file states for that person, and
+`[former participant]` when it states none. Role and organisation stay, as D3 accepts.
+
+Rejected:
+- *The hard-coded cast in `statement_extraction/pipeline/registry.py`.* It has no Nadia Öberg, so a
+  bare "Nadia" would look safe to redact, and it is a second list of names to keep in step with
+  the archive.
+- *Always redacting a bare first name.* Deleting Nadia Haddad would take the one mention of Nadia
+  Öberg with it.
+- *Never redacting a bare first name.* "Kwame" stays in 13 places after Kwame Boateng asked to go.
+- *Sweeping only `actor`, `agreed_by`, `verbatim_span` and `claim`.* A field added later would keep
+  the name.
+
+*Cost:* deleting Nadia Haddad leaves "Nadia" on its own in about 23 places, because it could also
+mean Nadia Öberg; the receipt says so, and a reader can still guess. Email forms are patterns, so
+an unusual address survives. Phone numbers are not covered, because nothing in a statement ties a
+number to a person; the receipt says how many statements contain one. A capitalised pair beginning
+with a known first name is taken for a person, which could add a false one and stop a bare first
+name from being redacted; on this archive the only extra person it finds is Nadia Öberg. Nothing
+calls the function yet: the backend mounts the file read-only and extraction is the only writer, so
+how the demo triggers a deletion is still to be decided.
+
+---
+
+## D43 — 2026-09-19 — Accepted
+**Deletion is a command in `statement_extraction` that rewrites the statements file in place and prints the receipt. Extends D42.**
+
+`uv run python -m src.app.delete "Kwame Boateng" [--dry-run]`, next to `extract.py`. It reads and
+writes `STATEMENTS_FILE_PATH`, the file extraction writes, and reuses extraction's whole-or-nothing
+writer, so a crash cannot leave a half-written record. In compose the extraction container is the
+only one with the volume mounted read-write, so the file still has exactly one writer:
+`docker compose run --rm --no-deps statement-extraction uv run --frozen python -m src.app.delete "<name>"`.
+The receipt is printed to the terminal as JSON and stored nowhere, since it names the person
+(D42). Exit 0 means the file was rewritten (or a dry run printed a receipt), 1 means nobody
+matched and the file was left untouched, 2 means there is no file. If a `documents/` folder from
+an interrupted extraction run sits next to the file, the command says it still holds the name.
+
+Rejected:
+- *Keeping a copy of the file from before the deletion, so a wrong name can be undone.* The copy
+  is a second place the person survives (rule 4). A wrong name is undone by re-extracting, which
+  D3 already says not to do after a deletion.
+- *Writing the receipt to a log next to the file.* It would keep the deleted name in an
+  audit trail, which undoes the deletion.
+- *Making the backend do it.* It mounts the file read-only and holds only the answering path.
+  Where the demo's trigger lives is still an open team decision (`docs/deletion.md`); this command
+  is what any trigger would call, so it does not pre-empt that choice.
+- *Refusing a bare first name that could mean two people.* D42 already resolves it, to the person
+  with the most statements, and the receipt says who else it could have been. A refusal would make
+  "delete Nadia" unrunnable.
+- *Removing the leftover `documents/` folder from here.* It is extraction's scratch space, not
+  ours to delete; the command warns and leaves the call to whoever owns extraction.
+
+*Cost:* the rewrite cannot be undone, which is the point. The backend caches the file by path, so
+its answers keep the old names until it restarts; until that is settled a deletion is complete on
+disk but not yet in what a judge sees. The receipt exists only on the screen of whoever ran the
+command, so the demo has to show it there or the frontend has to be given it (docs/deletion.md,
+step 5). A second run of the same name finds nobody and exits 1, which is honest but reads as an
+error in a script.
+
+---
+
+## D44 — 2026-09-19 — Accepted
+**The backend reads the statements file on every request and caches nothing. Closes the reload question D43 left open.**
+
+`load_statements` in `backend/src/app/statements.py` used `lru_cache`, so a running backend kept
+the file it first read. A deletion (D42, D43) rewrites the file on disk, and the backend went on
+answering with the old names until it restarted. It now reads and validates the file on each
+request. That costs 28 ms for 1,116 statements (1 MB), against seconds for the model call, and every
+request already re-serialises the whole file into the prompt (D2). The read is also explicitly
+UTF-8: the default on Windows is cp1252, which cannot decode "Öberg" or "Sørensen", so a local
+backend could not load a real file. The container was not affected. Checked against the running
+app: ask, delete Marco Rossi with the D43 command, ask again, with no restart. The name is gone,
+the placeholder is there, and all five citations still resolve.
+
+Rejected:
+- *Restarting the backend after each deletion* (`docker compose up --no-deps backend`, D12). No
+  code, but a manual step that fails silently: forget it and the answer still names the person,
+  which looks like the deletion did not work, on the slice the judges test directly. A trigger in
+  the UI would also need the container runtime's socket.
+- *A cache keyed on the file's modification time and size.* It keeps the cache, and a cache is a
+  copy of the derived artifact that deletion would have to reach (rule 4). The invalidation logic
+  is code to debug under time pressure, to save a parse that is cheaper than the rest of the request.
+- *A reload endpoint that the deletion command calls.* A new call between services, and state that
+  has to be kept in step with the file.
+
+*Cost:* each request pays the parse, about 28 ms per MB, which grows with the file; at ten times the
+statements it is still small next to the model call, and D2 already sets the ceiling where this
+design stops working. A request already running when the file is rewritten finishes with the old
+names, and the next one has the new. A file that is not valid now fails the request instead of
+serving an older copy, which is intended, and cannot happen from a half-written file because both
+extraction and deletion replace the file whole. This replaces the last cost line of D43, that the
+backend keeps the old names until it restarts.
+
+---
+
+## D45 — 2026-09-19 — Accepted, supersedes part of D42
+
+**Deletion is rebased onto the regrouped, claim-only statements file (D36/D37): it takes the
+`documents` array instead of a flat statement list, sweeps each document's own `people` and
+`summary`, and recognises an unnamed speaker by the shape of the name now that the `label`
+field is gone.**
+
+This branch was written against the pre-D36 file — a flat `statements` array whose entries
+carried `location`, `verbatim_span`, `agreed_by` and `actor.role`. While it sat unmerged,
+`main` regrouped the file under its documents (D36) and cut a statement down to
+`claim`/`actor`/`speech_act`/`statement_date` (D37). Rebasing onto that is not a textual
+merge: only `backend/src/app/statements.py` and this log actually conflicted, and the
+deletion code would have rebased *clean and silently wrong* — `delete.py` reads
+`["statements"]`, which no longer exists, and `delete_person` would have walked a list of
+document blocks looking for `actor` fields that live one level down.
+
+Three things the new shape changes, and what was decided about each:
+
+- **The unit of work is a document block, not a statement.** `delete_person(documents, ...)`
+  takes and returns the `documents` array as stored. Rejected: *keeping the flat signature
+  and having the command flatten and re-group around it.* Re-grouping means reconstructing
+  which statement belonged to which document from a derived id, which is exactly the kind of
+  cleverness that costs an hour at 2am — and the document block is what the file actually is.
+- **`people` and `summary` are swept like any other text.** They are new, they hold names
+  (`people` is a list of them), and they live on the document, not the statement. Leaving
+  them would have left a deleted person's name in the file in 45 places — working agreement
+  rule 3, and rule 4's "each derived artifact is a new place a deleted person survives"
+  applied to new *fields* rather than a new file. `statements_changed` in the receipt still
+  counts statements only, because that is the number a reader checks against the file; a
+  header changing is not a statement changing.
+- **An unnamed speaker is recognised by shape.** `output._actor` (D37) folds a transcript's
+  `label` into `actor.name`, so "Guest 1", "Them" and "Unknown Speaker" now arrive looking
+  like ordinary names — and "Guest 1" has two words, which is all `_find_people` used to
+  require. Without this, deleting "Guest 1" would have looked like a real deletion and the
+  receipt would have offered non-people as candidates. Rejected: *asking extraction to keep
+  the `label` field.* That reverses a decision made on the project owner's explicit
+  instruction (D37) to fix a problem that belongs to the consumer of the file, and the
+  labels are a closed, known set — `documents.Unit` documents them.
+
+`agreed_by` is still read if a statement carries it, so a file written before D37 resolves
+the same people it always did; nothing writes it any more.
+
+**Verified, not assumed:** the real extraction was run over the real 45-document corpus with a
+scripted model, producing 1,596 statements in the new shape, and Kwame Boateng, Nadia and
+Henrik Sorensen were deleted from it — no part of a deleted name survives anywhere including
+the headers, the envelope keeps its shape, and the result still loads in the backend's own
+`StatementsFile` model. Numbers and the two things that run does *not* prove are in
+[deletion.md](deletion.md).
+
+*Cost:* D42's description of what is swept is now wrong in its details — it names
+`verbatim_span` and `doc_type`, which no longer exist. It is left as written, per this log's
+append-only rule; this entry is the correction. The deeper cost is D37's, not this entry's:
+the verbatim span was the one field deletion could point a judge at to prove a redaction
+happened in real quoted text, and the claim is a paraphrase. Deletion still reaches every
+place a name sits, but "show me the redacted quote" is no longer a thing the file can answer.
+
+---
+
+## D46 — 2026-09-19 — Accepted, supersedes the "making the backend do it" rejection in D43 and amends D12
+
+**The deletion code lives in the backend service, and the backend mounts the statements
+volume read-write. Answers Q4, against its own leaning.**
+
+Direction from David: deletion has to be part of the backend container, because the
+extraction container is not running when a judge asks for one. That is the fact Q4's
+option A missed. D12 made extraction a job: it writes the file, exits 0, and is gone.
+Reaching its code afterwards means `docker compose run`, a new container from an image
+that has to still be on the VM, driven from a terminal — there is no path from the page to
+any of it. Q4's option A (a fourth service built from the extraction image) fixes that by
+keeping a server alive whose only job is deletion; the backend is already that server, on
+the compose network, with the volume mounted and a healthcheck the frontend waits on.
+
+What moved, whole, no copy left behind: `deletion.py`, `delete.py` and their 25 tests, from
+`statement_extraction` to `backend`. Q4's objection to option B was "the deletion code has
+to be copied into the backend or shared between two packages, so there are two copies to
+keep the same" — that objection assumed extraction still needed it, and it does not.
+Extraction now imports nothing from deletion and deletion imports nothing from extraction;
+its one dependency on extraction was `extract._write_json`, which is re-stated as
+`statements.write_statements` (six lines, deliberately written twice rather than shared
+across two workspace packages for a temporary-file-and-rename).
+
+The file still has one writer at a time, which is what D12's clause is for. Extraction
+creates it and exits; compose starts the backend only after that job completes, so the two
+never hold the file at once. Two deletions arriving together are serialised by a
+process-wide lock around read-redact-write in `delete_from_file`, and every write is
+whole-or-nothing, so the answering path — which re-reads the file on every request (D44) —
+sees the file from before a deletion or after it, never half of each.
+
+CLAUDE.md rule 2 is untouched: `/query` still reads the statements file and nothing else.
+Deletion is a different endpoint on the same service; it calls no model, reads no source
+document, and cannot be reached from the answering path.
+
+The command's default path changed with it, from `./statements.json` to
+`config.statements_file_path()` — the same default the answering path uses, the bundled
+mock file. Rejected: *keeping a separate default for the command.* Two defaults means a
+local run can rewrite a file the backend never reads, which looks exactly like a deletion
+that failed. The cost is that `uv run python -m src.app.delete "…"` with no
+`STATEMENTS_FILE_PATH` set now redacts the committed mock fixture; it is under git, and the
+container always sets the variable.
+
+Also rejected: *a fourth compose service from the extraction image* (Q4's leaning) — a
+service, a healthcheck and a deploy step to get wrong on Saturday evening, `fastapi` back
+into a package that stopped being a server at D12, and a second container mounting the
+volume read-write for no gain over a container that already exists. And *running the
+command by hand when a judge names someone* (Q4's option C) — the judges use the app
+themselves, so it fails the definition of done; it remains the fallback if the endpoint
+breaks.
+
+*Cost:* the backend process can now write `/data`. Before, the read-only mount made "the
+answering path cannot damage the record" a property of the deployment; now it is a property
+of the code, and a bug in the answering path could in principle corrupt the file the demo
+depends on. `architecture.md`'s line about extraction being a FastAPI service "so that …
+the deletion operation can be triggered without redeploying anything" is now wrong twice
+over and is corrected there. Q5 is untouched and gets worse to explain: `docker compose up`
+still re-runs extraction, which still puts a deleted person back, and that is now a
+different service's behaviour undoing this one's.
+
+---
+
+## D47 — 2026-09-19 — Accepted, closes Q4's second half and step 5 of docs/deletion.md
+
+**The page deletes through `POST /delete` on the backend, in one step, and shows a
+plain-language confirmation that names who was resolved and who was deliberately left —
+not the receipt JSON.**
+
+The header has a "Delete a person" button on every screen. It opens a dialog: a name, a
+line saying what is about to happen and that it cannot be undone, and one button. The
+backend runs the deletion and returns the receipt (D42) as a typed response; the page turns
+it into two or three sentences and drops it. "Done" clears the answer currently on screen,
+because it was written before the deletion and can still name the person.
+
+Direction from David: one step and a confirmation, no dry-run preview. Rejected with it:
+*preview-then-confirm*, which would resolve the person first and let a judge see who they
+are about to remove before it is irreversible — a click and a second call for a safety net
+against a typo, and the same sentences get shown either way.
+
+What the confirmation may not drop, and does not: the name deletion resolved the request
+to, and anyone it deliberately left. The archive plants two people sharing a first name
+(corpus.md, D19), so after deleting "Nadia" a judge who asks around the edges finds "Nadia"
+still in the record — and only this sentence distinguishes an identity we resolved and a
+bystander we kept from a redaction that missed half a person. The rubric does not ask for a
+receipt; the trap is what asks for it.
+
+Rejected:
+- *The receipt as JSON in the page.* It reads as debug output, and the part that matters —
+  who was left, and why — is legible only to someone who already knows the shape.
+- *A success toast with no names.* Cheapest, and it throws away the answer to the one
+  question the judges are planted to ask.
+- *Storing the receipt so it can be shown again.* It names the person; keeping it anywhere
+  undoes the deletion (D42, D43). It lives in `st.session_state` for the life of the dialog
+  and is cleared when the dialog closes.
+- *A 404 when nobody matches.* `deleted: null` with the file untouched is an answer, not an
+  error, and the page says "no one called X is in the record. They may already be deleted."
+  A missing statements file is a 503, because that one really is broken.
+
+*Cost:* anyone who opens the URL can permanently delete anybody, on the instance the next
+judge will use, with no undo and no confirmation beyond one button — a judge who deletes
+Kwame Boateng early leaves the next one without him for the provenance questions. Q4 raised
+that and it is still unanswered; the only reset is a re-extraction, which is slow and runs
+into Q5. A typo that happens to resolve to a real person deletes that person. And the
+confirmation is a page element, not a record: once the dialog closes, "show me that again"
+is not something the system can do, which is deliberate.
+
+---
+
+## D48 — 2026-09-20 — Accepted
+
+**The frontend is light-only, pinned in `frontend/.streamlit/config.toml`, and every custom
+HTML block keeps a 1rem bottom margin on its last child so Streamlit sizes it correctly.**
+
+Two bugs a judge would have seen, both reported by David, both in how Streamlit and our own
+CSS meet.
+
+*The page was half dark.* `app.py`'s design tokens are light values taken from
+`design.html`, but they only cover what we paint. Everything Streamlit paints — the text
+inputs, the buttons, the dialog — follows the browser's `prefers-color-scheme`, so on a
+laptop in dark mode the deletion dialog came up dark-on-dark inside a light page, with an
+unreadable title. `[theme] base = "light"` plus our own `primaryColor`, `backgroundColor`,
+`secondaryBackgroundColor` and `textColor` pins Streamlit's widgets to the same palette, and
+`color-scheme: light` on `:root` pins what the browser paints for us (form controls,
+scrollbars, autofill). Checked with a browser forced to dark: identical to light.
+
+Rejected: *supporting dark mode by adding dark values for our tokens.* A second palette to
+keep in step with a mockup that only exists in light, for a demo where the judges see one
+instance for ten minutes.
+
+*Controls sat on top of their own text.* The "Delete permanently" button overlapped the
+warning above it by exactly 16px. Streamlit sizes a markdown element's box on the
+assumption that its last child carries the default 1rem bottom margin, and cancels that
+margin again when it lays the elements out; every one of our components sets `margin:0`, so
+each block measured 16px shorter than its text and the next widget was positioned into it.
+Found by bisecting a minimal app one CSS property at a time: `color`, `font-size`,
+`line-height` and `font-weight` all size correctly, `margin:0` alone loses 16px.
+`[data-testid="stMarkdownContainer"] > *:last-child{margin-bottom:1rem !important;}` gives
+the margin back, costs no visible space because the layout cancels it, and fixes every block
+at once rather than the one that was reported — the answer card and the source rows were
+clipped by the same 16px.
+
+Rejected:
+- *Forcing `height:auto` on the element containers.* Tried first, and it does nothing: the
+  height is not a CSS declaration we can outrank.
+- *Replacing the custom HTML with native Streamlit components.* The design in `design.html`
+  lives in that HTML, and a styled native paragraph measures short in exactly the same way
+  as soon as its margin is zeroed — it is the margin, not the HTML.
+- *Moving the deletion out of the dialog and onto a page of its own.* Built and working
+  before the real cause was found; it is a bigger UI change than the bug needed, and the
+  same 16px bug followed it onto the page, which is how the cause was finally isolated.
+
+Also here, smaller: the confirm button uses the palette's own danger tone rather than
+Streamlit's default red; the name field's label is collapsed, since its placeholder asks the
+question; and after a deletion the dialog reruns its fragment so the confirmation replaces
+the form instead of appearing under a still-live "Delete permanently" button.
+
+*Cost:* a judge whose system is in dark mode gets a light page regardless — deliberate, but
+it is a preference we are overriding. The margin rule is a workaround for Streamlit
+internals: it is pinned to a `data-testid` and a 1rem assumption, so a Streamlit upgrade can
+silently undo it, and the symptom would again be overlapping text rather than an error. The
+theme file is a fourth place configuration lives (compose, Dockerfile, README, now this).
+
+
+---
+
+## D49 — 2026-09-19 — Accepted
 **Frontend polish pass: header now shares the content column's margins, the hero and
 question titles get `!important` so they actually render in the brand typeface, dark mode
-is removed via Streamlit's `theme.base`, and the ask button's arrow glyph is optically
-centered.**
+is pinned off, and the ask button's arrow glyph is optically centered.**
+
+*Written on a branch that did not yet have D42–D48. Two of its findings — dark mode and the
+16px spacing — were reached independently by D48; where they overlap, D48 is what ships.
+The bullets below say so individually.*
 
 Four requested fixes, all CSS-only changes to `frontend/app.py` plus one new
 `.streamlit/config.toml`. Two of them turned out to need more than the fix first asked for,
@@ -1422,13 +1759,17 @@ and fixing one of them surfaced a fifth bug plus a sanitizer gotcha worth its ow
   room to spare (519px natural width in 576px available). `.st-key-hero` was still widened,
   640px → 720px, per the literal ask — headroom for longer questions, not the fix itself.
 
-- **Dark mode.** No `prefers-color-scheme` rule exists anywhere in `STYLE`; Streamlit was
-  auto-following the OS/browser theme for its own native widgets regardless, visible as a
-  dark ask-input box sitting in an otherwise light page. Rejected: chasing every native
-  widget with a CSS override as dark-mode cases turn up — reactive, and the next native
-  widget added reopens the same bug. Fixed with `frontend/.streamlit/config.toml`
-  (`[theme]` / `base = "light"`), which removes dark mode at the source instead of fighting
-  its symptoms one widget at a time.
+- **Dark mode.** *Superseded by D48, which reached the same conclusion independently and
+  went further — keep D48's version, not this one.* No `prefers-color-scheme` rule exists
+  anywhere in `STYLE`; Streamlit was auto-following the OS/browser theme for its own native
+  widgets regardless, visible as a dark ask-input box sitting in an otherwise light page.
+  Rejected: chasing every native widget with a CSS override as dark-mode cases turn up —
+  reactive, and the next native widget added reopens the same bug. Fixed here with
+  `frontend/.streamlit/config.toml` (`[theme]` / `base = "light"`). D48, on the deletion
+  branch, wrote the same file with `base = "light"` *plus* our four palette tokens and
+  `color-scheme:light` on `:root`, which also covers what the browser paints (form controls,
+  scrollbars, autofill). Merging the two branches, this file was resolved to D48's version
+  outright; nothing of this bullet's change survives except the diagnosis.
 
 - **Button arrow.** First attempt, `.st-key-ask_form button p{transform:translateY(-4px)}`,
   silently did nothing — `transform` does not apply to a plain `display:inline` box per the
@@ -1472,7 +1813,7 @@ blank, unstyled page with nothing in the browser console or Streamlit's log to p
 
 ---
 
-## D43 — 2026-09-19 — Accepted *(extends D42)*
+## D50 — 2026-09-19 — Accepted *(extends D49)*
 **One `--content-width` column for the header, the ask state and the answer state — the
 hero widens from 720px to 880px to join it — and a loading indicator holds the answer card
 from submit until the backend's first token.**
@@ -1481,8 +1822,8 @@ Second pass on the same frontend, from the same direction: "the header is not al
 the search bar", "the strange grey background in the input", "the logo has no bottom
 margin", "just make it look polished".
 
-- **One column.** The header was 880px (D42) and the hero 720px, so the brand sat 80px left
-  of the ask bar — D42 fixed the header against the *answer* column and left the ask state
+- **One column.** The header was 880px (D49) and the hero 720px, so the brand sat 80px left
+  of the ask bar — D49 fixed the header against the *answer* column and left the ask state
   out of step. Now `--content-width:880px` and `--gutter:32px` are tokens on `:root` and all
   three consumers read them, so the brand, the ask bar and every answer line start at the
   same x. Rejected: aligning the header to the hero's 720px instead, which just moves the
@@ -1491,13 +1832,20 @@ margin", "just make it look polished".
   narrow centred box the mockup had — the ask bar is now 816px wide. Taken deliberately:
   alignment across the two states reads as more finished than a narrower empty state.
 
-- **Three Streamlit defaults were quietly eating the spacing.** All the same shape as D42's
+- **Three Streamlit defaults were quietly eating the spacing.** All the same shape as D49's
   specificity bug — Streamlit styling our own markup — and all found by measuring, not
   reading: (1) every markdown container carries `margin-bottom:-16px` to cancel a trailing
   markdown paragraph's margin, but every container here holds our own HTML with explicit
   margins, so it just ate 16px — that is why the logo had no room under it and why the
-  hero's 32px gap rendered as 16px; (2) the generated heading rule also carries
-  `padding:1.25rem 0 1rem`, which D42's margin overrides never touched, so both headings
+  hero's 32px gap rendered as 16px. **This is the same bug D48 found from the other end, and
+  D48's fix is the one that ships.** Both cancel the same −16px: this branch removed the
+  container's negative margin, D48 gives the last child back the 1rem the negative margin
+  assumes. Net spacing is identical, so the merge kept D48's rule and dropped this one —
+  keeping both would have stacked them into a real +16px everywhere. D48 also has the better
+  claim: it was isolated by bisecting a minimal app one property at a time, it is written
+  down, and it fixes the deletion dialog's overlapping button, which this branch never saw;
+  (2) the generated heading rule also carries
+  `padding:1.25rem 0 1rem`, which D49's margin overrides never touched, so both headings
   sat in 36px of padding that was not in the design; (3) the grey field is painted by
   Streamlit's `stTextInputRootElement` wrapper, not the `input` we were overriding, so the
   override left a grey box inside the white pill. Header padding is now 20px, which makes

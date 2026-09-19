@@ -50,14 +50,16 @@ judges believe the other four.
    agreed. The valuable answer is "X proposed it on <date>; no agreement from the customer
    appears in the record" — with the citation for the proposal, and nothing invented for
    the agreement.
-3. **Delete a person.** Let them pick. Run the deletion, show the receipt, then ask about
-   that person — and then ask about a decision from the same meeting, which still answers.
+3. **Delete a person.** Let them pick, and let *them* do it: "Delete a person" in the header,
+   their name, one button ([D47](decisions.md)). The confirmation is on their screen, not in
+   our terminal. Then ask about that person — and then ask about a decision from the same
+   meeting, which still answers.
    Rehearse on **Kwame Boateng**: that is who the practice set deletes (P7), and they
    picked him because he is a source for the provenance question (P1) — deleting him has
    to leave that answer standing, minus his name.
    Say out loud that this is pseudonymisation and what that does and does not guarantee.
-   If they pick a first name the archive gives to two people — "Nadia" — the receipt has
-   to name both and say which one was removed and which was left. Deletion never stops to
+   If they pick a first name the archive gives to two people — "Nadia" — the confirmation
+   names both and says which one was removed and which was left. Deletion never stops to
    ask; it decides and discloses ([D19](decisions.md), [corpus.md](corpus.md)).
 4. **The thing it does unasked.** *(TODO: pending the team's choice — see
    [roadmap.md](roadmap.md).)*

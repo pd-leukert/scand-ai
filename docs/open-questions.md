@@ -50,3 +50,30 @@ Not a decision — a fact nobody has checked. Residency is scored, the deploymen
 in the EU (D17), and "it is Verda" is not an answer to "where inference runs". Somebody
 open the console and write the region into
 [architecture.md](architecture.md#residency).
+
+## Q5 — What stops our own tooling from undoing a deletion?
+
+**Status:** not decided, 2026-09-19. **Needed by:** before the first deletion on the deployed VM.
+
+A deletion rewrites `statements.json` — from the page or from the command, both in the backend
+(D46) — and two things we already do can put the person back or leave them behind:
+
+1. **`docker compose up` re-runs extraction.** D12 says so in its cost line, and `extract.py`
+   writes the file unconditionally. A restart or a redeploy after a deletion brings the person back
+   with no warning, on the one slice the brief tests directly. D3 states the condition ("no
+   re-extraction after a deletion") but nothing enforces it.
+2. **An interrupted extraction run leaves `documents/` behind.** It holds one file per document
+   with every name in it, and deletion does not reach it (rule 4). A clean run removes it.
+
+| Option | Answers | Catch |
+|---|---|---|
+| The extraction job skips itself when the statements file already exists; re-extracting means removing the file on purpose | 1 | Changes extraction's behaviour, which its owner has to agree to, and a first run on a fresh volume is unaffected. Cheapest to check. |
+| A runbook: after a deletion, only ever restart with `docker compose up --no-deps backend` | 1 | No code, but it holds only while nobody forgets it under Sunday-morning pressure. |
+| The job clears `documents/` when it starts, and on any exit | 2 | Loses the leftover files that are useful for working out why a run stopped. |
+| Keep a list of who was deleted and replay it after a re-extraction | 1 | Rejected in advance: the list keeps the names, which undoes the deletion. |
+
+**Leaning:** skip extraction when the file exists, for 1, and clear `documents/` at the start of a
+run, for 2. Both are changes to extraction, so they are its owner's call.
+
+Whoever decides: write the entry in [decisions.md](decisions.md), update
+[deletion.md](deletion.md), and delete this.

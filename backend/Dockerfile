@@ -17,10 +17,11 @@ RUN uv sync --locked --package backend --no-install-workspace
 
 COPY backend/ backend/
 
-# The statements file the answering path reads, and the only thing it reads. Mounted
-# read-only by compose; extraction is the only writer. Read by config.py as
-# STATEMENTS_FILE_PATH — this name has to match what extraction's Dockerfile sets, or the
-# backend silently falls back to the bundled mock file. See D28.
+# The statements file the answering path reads, and the only thing it reads. Extraction
+# creates it; this service rewrites it when a person is deleted (D46), so compose mounts
+# the volume read-write. Read by config.py as STATEMENTS_FILE_PATH — this name has to match
+# what extraction's Dockerfile sets, or the backend silently falls back to the bundled mock
+# file. See D28.
 ENV STATEMENTS_FILE_PATH=/data/statements.json
 
 WORKDIR /app/backend
