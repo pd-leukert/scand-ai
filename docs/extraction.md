@@ -36,6 +36,40 @@ next few statements by other people and asks whether one accepted it. The link i
 the named person's statement contains the quoted words, and it records the id of that statement,
 so an agreement has a receipt too (D20).
 
+## How the documents are chunked
+
+There are two steps, and neither cuts through the middle of a speaker's turn.
+
+**1. Split each file into units** (`documents.py`, [D16](decisions.md)). A unit is the smallest
+piece a statement can come from, and a statement never spans two units. Each line in a unit keeps
+its own line number from the file, which is where the citation's location comes from later.
+
+| Document | One unit is | Parser |
+|---|---|---|
+| Teams transcript | One speaker turn. A turn starts at a four-line header: name, doubled time, initials, `name elapsed`. | `_parse_teams` |
+| `INTERNAL` transcript | A run of consecutive `Me:` or `Them:` lines by the same speaker. | `_parse_internal` |
+| Email or report thread | One message. Each `From:` line starts one, and the count must match the `Messages in thread` header or the parse fails. | `_parse_thread` |
+
+Lines are split on `\n` only, not with `splitlines()`, so the numbers match what an editor shows.
+Blank lines and the external-sender banner are not kept.
+
+**2. Group units into batches for the model** (`_batches` in `extraction.py`, [D18](decisions.md)).
+Units are taken in order and their words are added up. When the next unit would push the batch past
+`EXTRACTION_BATCH_WORDS` (default 300), the batch is closed and a new one starts. So:
+
+- A unit longer than the budget gets a batch to itself. Units are never split.
+- Each batch is one model call. It carries a header (document id, kind, date, attendees) and the
+  units numbered `[1]`, `[2]`, and so on, each with its speaker and position. The model answers
+  with a unit number and a quote.
+- Batches do not overlap, and each document is chunked on its own. Nothing crosses a document.
+- A statement whose unit number is outside its batch is dropped and logged.
+
+300 words came from testing: at 1000 words the 4B model kept 22 statements and dropped 28, and at
+300 it kept 48 and dropped none. A smaller number is more reliable but means more model calls.
+
+The agreement pass (D20) does not use batches. It looks at each proposal or question and the next
+eight statements by other people in the same document.
+
 ## What is in the branch
 
 | Path | What it is |
@@ -91,6 +125,25 @@ or role no document states reads `Not stated`.
 
 Everything stays on infrastructure we control. The Ollama container is not published outside the
 compose network, and the code has no path to any outside model API (D14).
+
+### Where to find the generated file
+
+The job writes one file, `statements.json`, and `STATEMENTS_PATH` decides where.
+
+| How you ran it | Where the file is |
+|---|---|
+| Native, `STATEMENTS_PATH` not set | `statements.json` in the folder you ran the command from. That is `statement_extraction/` if you followed the steps below. |
+| Docker or compose | `/data/statements.json` inside the `statements` Docker volume. The image sets `STATEMENTS_PATH=/data/statements.json`. On the host the volume is named `<project>_statements`, for example `scand-ai_statements`. |
+| The backend | Reads the same volume, mounted read-only at `/data`. It never sees the source documents. |
+
+To copy the file out of the volume, see [Getting the result out](#getting-the-result-out).
+
+- **Not in git.** `statements.json` and `statements.json.tmp` are in `.gitignore`. It is generated
+  from the corpus, so it is never committed.
+- **Written all at once.** The job writes `statements.json.tmp` and then swaps it in, so the
+  backend never reads a half-written file.
+- **The backend's variable has a different name.** It reads `STATEMENTS_FILE_PATH`, not
+  `STATEMENTS_PATH`. Compose has to set both to `/data/statements.json`.
 
 ## Run it on your laptop
 
