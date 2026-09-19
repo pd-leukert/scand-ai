@@ -18,7 +18,8 @@ it exits, and the backend and frontend are held until it does. It waits in turn 
 ## Configuration
 
 Compose passes `EXTRACTION_LLM_BASE_URL` (the `ollama` service) and `EXTRACTION_LLM_MODEL`
-(default `qwen3.8:27b-mtp-bf16`). These are deliberately separate from the backend's
+(default `qwen3:0.6b`, the laptop model — the VM overrides it, see
+[D25](../docs/decisions.md)). These are deliberately separate from the backend's
 `LLM_BASE_URL`/`LLM_MODEL`: extraction and answering are allowed to use different models,
 and the working agreement says never to assume otherwise. See
 [decision D23](../docs/decisions.md). Nothing reads them yet — the real extraction pass
