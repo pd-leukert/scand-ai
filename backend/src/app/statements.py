@@ -19,6 +19,7 @@ document and a paraphrased claim, not at a real line range or a verbatim quote.
 from __future__ import annotations
 
 import json
+import os
 from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
@@ -96,3 +97,23 @@ def load_statements(path: str) -> dict[str, Statement]:
             for position, body in enumerate(document.statements, start=1)
         )
     }
+
+
+def write_statements(path: str, documents: list[dict]) -> None:
+    """Replace the statements file with `documents`, whole or not at all.
+
+    Deletion is the only thing in this service that writes the file (D46). The write goes to a
+    temporary file and is renamed over the old one, so a request that arrives mid-deletion reads
+    the file from before it or after it, never half of each — the guarantee load_statements()
+    above relies on. The same whole-or-nothing write extraction uses when it first creates the
+    file; the two are deliberately not shared, since a helper spanning both packages would be one
+    more thing to trace at 2am.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(
+        json.dumps({"documents": documents}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(tmp, target)

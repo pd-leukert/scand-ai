@@ -62,9 +62,9 @@ does.
 
 ## Deleting a person
 
-`uv run python -m src.app.delete "Kwame Boateng"` rewrites the statements file in place, replacing
-that person with a role placeholder everywhere they appear, and prints a receipt. `--dry-run` shows
-the receipt and changes nothing. There is no backup: it would be a second copy of the name. Run it
-in compose with `docker compose run --rm --no-deps statement-extraction uv run --frozen python -m
-src.app.delete "<name>"`. The backend reads the file on every request, so it answers from the
-rewrite straight away. How it works and where it stands: [docs/deletion.md](../docs/deletion.md), [D42 to D45](../docs/decisions.md).
+Not here any more. Deletion runs in the backend, which is still running when someone asks for it
+— this job is not ([D46](../docs/decisions.md)). See [backend/README.md](../backend/README.md)
+and [docs/deletion.md](../docs/deletion.md).
+
+What is still this job's problem: a re-run puts a deleted person back, and an interrupted run
+leaves `documents/` holding every name (open-questions.md, Q5).

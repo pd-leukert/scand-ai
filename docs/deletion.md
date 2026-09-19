@@ -2,8 +2,9 @@
 
 Update this page in place as the branch moves. It is a status page, unlike
 [decisions.md](decisions.md), which is append-only. The design is in [D3](decisions.md),
-[D19](decisions.md), [D42](decisions.md), [D43](decisions.md), [D44](decisions.md) and
-[D45](decisions.md); this page says what is built and what is left.
+[D19](decisions.md), [D42](decisions.md), [D43](decisions.md), [D44](decisions.md),
+[D45](decisions.md), [D46](decisions.md) and [D47](decisions.md); this page says what is built
+and what is left.
 
 ## In one paragraph
 
@@ -12,8 +13,11 @@ the answering path reads (working agreement, rule 3). A request such as "Kwame B
 resolved to one person. Every spelling of that person is then replaced by a role-class
 placeholder, such as `[former RELEX employee]`, in the speaker fields, the claim, and the
 document's own `people` and `summary`. The neighbouring statements survive, so the decisions around the
-person keep answering. A receipt says who was removed and who was left. It is pseudonymisation,
-not erasure, and the demo says so out loud.
+person keep answering. A receipt says who was removed and who was left, and the page shows it as
+a sentence. It is pseudonymisation, not erasure, and the demo says so out loud.
+
+It runs in the backend container (D46), which is the one that is still running when a judge asks
+for it — extraction is a job and has long exited.
 
 ## Where it stands
 
@@ -21,22 +25,24 @@ not erasure, and the demo says so out loud.
 |---|---|
 | 1. The redaction function and its tests | Done. Committed on this branch. |
 | 2. A command that rewrites `statements.json` in place and prints the receipt | Done. `python -m src.app.delete`, see "Try it". |
-| 3. How the demo triggers a deletion | Needs a team decision, see below. |
+| 3. How the demo triggers a deletion | Done. A "Delete a person" button in the page header, `POST /delete` on the backend (D46, D47). |
 | 3b. The backend answers from the rewritten file without a restart | Done. It reads the file on every request (D44). |
 | 4. Try it on the real `statements.json` from the full extraction run | Half done. Run on a file of the real shape — all 45 documents, 1,596 statements, see "Checked against the real shape". The real model's run is still to come. |
-| 5. Show the receipt in the frontend, then keep answering | Not started. Frontend work. |
+| 5. Show the receipt in the frontend, then keep answering | Done. Two sentences in the dialog, then the page clears the old answer and keeps answering. |
 | 6. Rehearse on Kwame Boateng (practice question P7), Nadia and Henrik | Not started. |
 
 ## What is in the branch
 
 | Path | What it is |
 |---|---|
-| `statement_extraction/src/app/deletion.py` | `delete_person(documents, request)` takes the file's `documents` array (D36) and returns it redacted, plus a receipt. It reads nothing else and keeps nothing. |
-| `statement_extraction/tests/test_deletion.py` | 18 tests: the three name traps, emails, claims, the document header, placeholders, unnamed speakers, an unknown name, a second deletion. |
-| `statement_extraction/src/app/delete.py` | The command: reads and writes `STATEMENTS_FILE_PATH`, prints the receipt, `--dry-run` changes nothing. |
-| `backend/src/app/statements.py`, `backend/tests/test_statements.py` | The backend reads the file on every request and reads it as UTF-8 (D44). 2 tests. |
-| `statement_extraction/tests/test_delete_command.py` | 7 tests: the rewrite, non-ASCII names surviving, dry run, an unknown name, a repeat, a missing file, a leftover `documents/` folder. |
-| `docs/decisions.md` | D42: the design. D43: the command. D44: the backend re-read. D45: the move onto the regrouped, claim-only file. What was rejected, what it costs. |
+| `backend/src/app/deletion.py` | `delete_person(documents, request)` takes the file's `documents` array (D36) and returns it redacted, plus a receipt. It reads nothing else and keeps nothing. |
+| `backend/tests/test_deletion.py` | 18 tests: the three name traps, emails, claims, the document header, placeholders, unnamed speakers, an unknown name, a second deletion. |
+| `backend/src/app/delete.py` | `delete_from_file()` — read, redact, write, under a lock — and the command that runs it from a terminal. `--dry-run` changes nothing. |
+| `backend/src/app/main.py`, `backend/src/app/schemas.py` | `POST /delete`: one name in, the typed receipt out. `deleted: null` when nobody matched, 503 when there is no file. |
+| `backend/src/app/statements.py`, `backend/tests/test_statements.py` | The file is read on every request and as UTF-8 (D44), and written whole-or-nothing. 2 tests. |
+| `backend/tests/test_delete_command.py`, `backend/tests/test_delete_endpoint.py` | 7 + 5 tests: the rewrite, non-ASCII names surviving, dry run, an unknown name, a repeat, a missing file, a leftover `documents/` folder, the two-Nadia receipt over HTTP, an empty name. |
+| `frontend/app.py` | The "Delete a person" dialog and the confirmation it renders. No logic beyond the copy. |
+| `docs/decisions.md` | D42: the design. D43: the command. D44: the backend re-read. D45: the move onto the regrouped, claim-only file. D46: the move into the backend. D47: the trigger and what the page shows. What was rejected, what it costs. |
 
 ## How it works
 
@@ -56,6 +62,9 @@ not erasure, and the demo says so out loud.
    document's own `people` and `summary` — except ids, dates, `type`, `position`, `speech_act`
    and `handling`. A field added later is covered by default.
 4. **Return a receipt.** It is for showing, and is not stored.
+5. **Show it as a sentence.** The page names who was removed, what the file says in their place,
+   and who was resolved but deliberately left. That last part is what tells a judge that a name
+   still in the record is a bystander we kept, not a redaction that missed (D47).
 
 The receipt for "Nadia" on the real archive text:
 
@@ -67,30 +76,40 @@ left in place:  "Nadia" on its own: also the name of Nadia Öberg
 
 ## Try it
 
-Run the tests:
+**In the app**, which is how a judge does it: "Delete a person" in the header, type a name,
+"Delete permanently". The confirmation appears in the dialog, "Done" closes it, and the next
+question is answered from the rewritten file.
+
+**Over HTTP**, from inside the compose network:
 
 ```
-cd statement_extraction
-uv run pytest
+curl -s -X POST localhost:8000/delete -H 'content-type: application/json' \
+  -d '{"name": "Kwame Boateng"}'
 ```
 
-Delete a person from the statements file (`STATEMENTS_FILE_PATH`, default `statements.json`). Add
+`deleted: null` means nobody by that name is in the file and nothing was changed; 503 means there
+is no statements file at all.
+
+**From a terminal**, against `STATEMENTS_FILE_PATH` (the bundled mock file unless it is set). Add
 `--dry-run` to see the receipt and change nothing:
 
 ```
+cd backend
 uv run python -m src.app.delete "Kwame Boateng" --dry-run
-uv run python -m src.app.delete "Kwame Boateng"
+docker compose exec backend uv run --frozen python -m src.app.delete "Kwame Boateng"
 ```
 
-In compose, where the extraction container is the only one that can write the file:
+Exit code 0 is done, 1 is nobody by that name (the file is untouched), 2 is no file.
+
+Run the tests:
 
 ```
-docker compose run --rm --no-deps statement-extraction uv run --frozen python -m src.app.delete "Kwame Boateng"
+cd backend
+uv run pytest
 ```
 
-The receipt goes to the terminal and is stored nowhere. There is no backup, so the rewrite cannot
-be undone. Exit code 0 is done, 1 is nobody by that name (the file is untouched), 2 is no file.
-The backend reads the file on every request, so the next answer already uses the rewrite.
+The receipt is shown and stored nowhere. There is no backup, so the rewrite cannot be undone. The
+backend reads the file on every request, so the next answer already uses the rewrite.
 
 ## Checked against the real shape
 
@@ -136,6 +155,8 @@ What this run does *not* prove, because the scripted model is thinner than a rea
   that stays, never a wrong deletion.
 - **Not yet run on the real model's output.** The checks above use the real record shape, but the
   spans and claims were scripted, so how the model words a claim about a person has not been seen.
+- **No undo, and no gate.** One button in the page rewrites the record permanently, for everyone
+  who uses that instance afterwards. There is nothing to restore from, deliberately.
 - **An interrupted extraction run leaves an unredacted copy.** Extraction writes one file per
   document into a `documents/` folder next to `statements.json` and removes it only after a clean
   run. If a run stops partway, those files hold every name and deletion does not reach them. This
@@ -144,14 +165,17 @@ What this run does *not* prove, because the scripted model is thinner than a rea
 
 ## Decisions the team has to make
 
-Both are written up with the options in [open-questions.md](open-questions.md).
+**What stops our own tooling from undoing a deletion (Q5).** `docker compose up` re-runs
+extraction, which would bring a deleted person back, and an interrupted run leaves a
+`documents/` folder holding every name. Written up with the options in
+[open-questions.md](open-questions.md). It belongs to extraction, not to this branch, and it is
+now the last thing between a deletion and a redeploy undoing it.
 
-1. **How a judge triggers a deletion on the deployed app (Q4).** The command works, but judges use
-   the app themselves, and the page cannot call a command. It needs something the frontend can
-   reach, without giving the backend a write path.
-2. **What stops our own tooling from undoing a deletion (Q5).** `docker compose up` re-runs
-   extraction, which would bring a deleted person back, and an interrupted run leaves a
-   `documents/` folder holding every name.
+**Who may delete, and how the instance is reset.** Anyone who opens the URL can permanently delete
+anybody, and a judge who deletes Kwame Boateng early leaves the next judge without him for the
+provenance questions. Q4 raised this and D47 accepts it as a cost rather than answering it: there
+is no reset short of a re-extraction, and a copy of the file to restore from would be a second
+place every name survives (rule 4).
 
 ## Not planned
 

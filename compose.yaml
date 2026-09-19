@@ -111,8 +111,9 @@ services:
       ollama-pull:
         condition: service_completed_successfully
     volumes:
-      # Read-only: extraction is the only writer of the derived artifact.
-      - statements:/data:ro
+      # Read-write: extraction creates the file, and the backend rewrites it when a person
+      # is deleted. Extraction has exited by then, so the two never write at once (D46).
+      - statements:/data
     environment:
       - LLM_BASE_URL=http://ollama:11434/v1
       - LLM_MODEL=${LLM_MODEL:-qwen3:0.6b}
@@ -151,8 +152,8 @@ services:
     restart: unless-stopped
 
 volumes:
-  # The statements file: written once by extraction, read by the backend. One derived
-  # artifact, one place it lives.
+  # The statements file: written once by extraction, read by the backend on every request
+  # and rewritten by it on a deletion. One derived artifact, one place it lives.
   statements:
   # Laptop model store. The VM sets OLLAMA_DATA_DIR and binds its own directory instead,
   # leaving this one unused.

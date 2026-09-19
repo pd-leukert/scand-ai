@@ -116,6 +116,16 @@ button p{margin:0;}
 .sc-empty-note{font-family:'IBM Plex Sans',sans-serif;font-size:13px;color:var(--text-faint);
   margin-top:12px;}
 
+/* delete-a-person dialog */
+.st-key-header_actions [data-testid="stHorizontalBlock"]{padding:0 !important;gap:8px !important;}
+.sc-dialog-note{font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:20px;
+  color:var(--text-muted);margin:0 0 4px;}
+.sc-dialog-note strong{color:var(--text);}
+.sc-receipt{display:flex;flex-direction:column;gap:8px;}
+.sc-receipt p{margin:0;font-family:'IBM Plex Sans',sans-serif;font-size:14px;line-height:22px;
+  color:var(--text);}
+.sc-receipt .muted{color:var(--text-muted);font-size:13px;line-height:20px;}
+
 .sc-error{background:#fdf1f1;border:1px solid #e8b4b4;border-radius:16px;padding:20px 24px;
   color:#8a2c2c;font-family:'IBM Plex Sans',sans-serif;font-size:14px;line-height:22px;}
 
@@ -235,6 +245,99 @@ def stream_backend(question: str, result: dict) -> Iterator[str]:
         result["error"] = f"Could not reach the backend: {exc}"
 
 
+def request_deletion(name: str) -> dict:
+    """Asks the backend to delete a person and hands back its receipt, or {"error": ...}.
+
+    Shown once and then dropped — the receipt names the person, and keeping it anywhere would
+    undo the deletion (docs/decisions.md D42)."""
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/delete", json={"name": name}, timeout=REQUEST_TIMEOUT
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.HTTPError as exc:
+        return {"error": _http_error_message(exc)}
+    except requests.RequestException as exc:
+        return {"error": f"Could not reach the backend: {exc}"}
+
+
+def deletion_confirmation_html(receipt: dict) -> str:
+    """A confirmation, not a receipt dump: who was removed, and who was deliberately kept.
+
+    The second half is the part that cannot be dropped. The archive holds two people sharing a
+    first name (docs/corpus.md), so a name still in the record after a deletion is either
+    another person we resolved and left on purpose, or a deletion that missed — and only this
+    says which (docs/deletion.md)."""
+    deleted = receipt.get("deleted")
+    requested = html.escape(receipt.get("requested", ""))
+    if deleted is None:
+        return (
+            f'<div class="sc-receipt"><p>No one called “{requested}” is in the record, so '
+            "nothing was changed. They may already be deleted.</p></div>"
+        )
+    count = deleted["statements_changed"]
+    lines = [
+        f"<p><strong>{html.escape(deleted['name'])}</strong> is gone from the record. "
+        f"{count} {'statement' if count == 1 else 'statements'} now read "
+        f"{html.escape(deleted['placeholder'])}.</p>"
+    ]
+    kept = [
+        html.escape(person["name"])
+        for person in receipt.get("considered", [])
+        if person["outcome"] == "left"
+    ]
+    if kept:
+        lines.append(
+            f'<p class="muted">{", ".join(kept)} stayed — a different person, kept by name.</p>'
+        )
+    lines += [
+        f'<p class="muted">Left in place: {html.escape(note)}.</p>'
+        for note in receipt.get("left_in_place", [])
+    ]
+    return f'<div class="sc-receipt">{"".join(lines)}</div>'
+
+
+@st.dialog("Delete a person")
+def deletion_dialog() -> None:
+    """Name, confirm, done. Streamlit reruns only this function while the dialog is open, so
+    the receipt lives in session state between the click and the confirmation."""
+    receipt = st.session_state.deletion_receipt
+    if receipt is None:
+        name = st.text_input("Name", placeholder="e.g. Kwame Boateng", key="deletion_name").strip()
+        st.markdown(
+            '<p class="sc-dialog-note">Every spelling of that person is replaced by their '
+            "role, in the claims as well as the speaker fields. Everyone else stays named, "
+            "and the decisions around them keep answering. "
+            "<strong>This rewrites the record and cannot be undone.</strong></p>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Delete permanently", key="confirm_deletion", type="primary"):
+            if not name:
+                st.markdown(
+                    '<p class="sc-dialog-note">Type a name first.</p>', unsafe_allow_html=True
+                )
+                return
+            receipt = st.session_state.deletion_receipt = request_deletion(name)
+    if receipt is None:
+        return
+    if receipt.get("error"):
+        st.markdown(
+            f'<div class="sc-error">{html.escape(receipt["error"])}</div>', unsafe_allow_html=True
+        )
+    else:
+        st.markdown(deletion_confirmation_html(receipt), unsafe_allow_html=True)
+    if st.button("Done", key="close_deletion"):
+        # The answer on screen was written before the deletion and can still name the person,
+        # so it goes with them. The next question is answered from the rewritten file.
+        st.session_state.deletion_receipt = None
+        st.session_state.question = None
+        st.session_state.answer = ""
+        st.session_state.citations = []
+        st.session_state.error = ""
+        st.rerun()
+
+
 def render_source_row(citation: dict) -> None:
     statement_id = citation["statement_id"]
     container_key = f"source_{statement_id}"
@@ -277,6 +380,7 @@ for key, default in {
     "answer": "",
     "citations": [],
     "error": "",
+    "deletion_receipt": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -285,14 +389,22 @@ with st.container(key="header"):
     left, right = st.columns(2)
     with left:
         st.markdown(BRAND_HTML, unsafe_allow_html=True)
-    if st.session_state.question:
-        with right:
-            if st.button("New question", key="new_question"):
-                st.session_state.question = None
-                st.session_state.answer = ""
-                st.session_state.citations = []
-                st.session_state.error = ""
-                st.rerun()
+    with right, st.container(key="header_actions"):
+        new_question_col, delete_col = st.columns(2)
+        if st.session_state.question:
+            with new_question_col:
+                if st.button("New question", key="new_question"):
+                    st.session_state.question = None
+                    st.session_state.answer = ""
+                    st.session_state.citations = []
+                    st.session_state.error = ""
+                    st.rerun()
+        with delete_col:
+            # Opened from here rather than kept in session state: Streamlit closes the dialog
+            # when the script reruns without this call, which is what the ✕ needs to work.
+            if st.button("Delete a person", key="open_deletion"):
+                st.session_state.deletion_receipt = None
+                deletion_dialog()
 
 if not st.session_state.question:
     hero_placeholder = st.empty()

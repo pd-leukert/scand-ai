@@ -1555,3 +1555,110 @@ append-only rule; this entry is the correction. The deeper cost is D37's, not th
 the verbatim span was the one field deletion could point a judge at to prove a redaction
 happened in real quoted text, and the claim is a paraphrase. Deletion still reaches every
 place a name sits, but "show me the redacted quote" is no longer a thing the file can answer.
+
+---
+
+## D46 — 2026-09-19 — Accepted, supersedes the "making the backend do it" rejection in D43 and amends D12
+
+**The deletion code lives in the backend service, and the backend mounts the statements
+volume read-write. Answers Q4, against its own leaning.**
+
+Direction from David: deletion has to be part of the backend container, because the
+extraction container is not running when a judge asks for one. That is the fact Q4's
+option A missed. D12 made extraction a job: it writes the file, exits 0, and is gone.
+Reaching its code afterwards means `docker compose run`, a new container from an image
+that has to still be on the VM, driven from a terminal — there is no path from the page to
+any of it. Q4's option A (a fourth service built from the extraction image) fixes that by
+keeping a server alive whose only job is deletion; the backend is already that server, on
+the compose network, with the volume mounted and a healthcheck the frontend waits on.
+
+What moved, whole, no copy left behind: `deletion.py`, `delete.py` and their 25 tests, from
+`statement_extraction` to `backend`. Q4's objection to option B was "the deletion code has
+to be copied into the backend or shared between two packages, so there are two copies to
+keep the same" — that objection assumed extraction still needed it, and it does not.
+Extraction now imports nothing from deletion and deletion imports nothing from extraction;
+its one dependency on extraction was `extract._write_json`, which is re-stated as
+`statements.write_statements` (six lines, deliberately written twice rather than shared
+across two workspace packages for a temporary-file-and-rename).
+
+The file still has one writer at a time, which is what D12's clause is for. Extraction
+creates it and exits; compose starts the backend only after that job completes, so the two
+never hold the file at once. Two deletions arriving together are serialised by a
+process-wide lock around read-redact-write in `delete_from_file`, and every write is
+whole-or-nothing, so the answering path — which re-reads the file on every request (D44) —
+sees the file from before a deletion or after it, never half of each.
+
+CLAUDE.md rule 2 is untouched: `/query` still reads the statements file and nothing else.
+Deletion is a different endpoint on the same service; it calls no model, reads no source
+document, and cannot be reached from the answering path.
+
+The command's default path changed with it, from `./statements.json` to
+`config.statements_file_path()` — the same default the answering path uses, the bundled
+mock file. Rejected: *keeping a separate default for the command.* Two defaults means a
+local run can rewrite a file the backend never reads, which looks exactly like a deletion
+that failed. The cost is that `uv run python -m src.app.delete "…"` with no
+`STATEMENTS_FILE_PATH` set now redacts the committed mock fixture; it is under git, and the
+container always sets the variable.
+
+Also rejected: *a fourth compose service from the extraction image* (Q4's leaning) — a
+service, a healthcheck and a deploy step to get wrong on Saturday evening, `fastapi` back
+into a package that stopped being a server at D12, and a second container mounting the
+volume read-write for no gain over a container that already exists. And *running the
+command by hand when a judge names someone* (Q4's option C) — the judges use the app
+themselves, so it fails the definition of done; it remains the fallback if the endpoint
+breaks.
+
+*Cost:* the backend process can now write `/data`. Before, the read-only mount made "the
+answering path cannot damage the record" a property of the deployment; now it is a property
+of the code, and a bug in the answering path could in principle corrupt the file the demo
+depends on. `architecture.md`'s line about extraction being a FastAPI service "so that …
+the deletion operation can be triggered without redeploying anything" is now wrong twice
+over and is corrected there. Q5 is untouched and gets worse to explain: `docker compose up`
+still re-runs extraction, which still puts a deleted person back, and that is now a
+different service's behaviour undoing this one's.
+
+---
+
+## D47 — 2026-09-19 — Accepted, closes Q4's second half and step 5 of docs/deletion.md
+
+**The page deletes through `POST /delete` on the backend, in one step, and shows a
+plain-language confirmation that names who was resolved and who was deliberately left —
+not the receipt JSON.**
+
+The header has a "Delete a person" button on every screen. It opens a dialog: a name, a
+line saying what is about to happen and that it cannot be undone, and one button. The
+backend runs the deletion and returns the receipt (D42) as a typed response; the page turns
+it into two or three sentences and drops it. "Done" clears the answer currently on screen,
+because it was written before the deletion and can still name the person.
+
+Direction from David: one step and a confirmation, no dry-run preview. Rejected with it:
+*preview-then-confirm*, which would resolve the person first and let a judge see who they
+are about to remove before it is irreversible — a click and a second call for a safety net
+against a typo, and the same sentences get shown either way.
+
+What the confirmation may not drop, and does not: the name deletion resolved the request
+to, and anyone it deliberately left. The archive plants two people sharing a first name
+(corpus.md, D19), so after deleting "Nadia" a judge who asks around the edges finds "Nadia"
+still in the record — and only this sentence distinguishes an identity we resolved and a
+bystander we kept from a redaction that missed half a person. The rubric does not ask for a
+receipt; the trap is what asks for it.
+
+Rejected:
+- *The receipt as JSON in the page.* It reads as debug output, and the part that matters —
+  who was left, and why — is legible only to someone who already knows the shape.
+- *A success toast with no names.* Cheapest, and it throws away the answer to the one
+  question the judges are planted to ask.
+- *Storing the receipt so it can be shown again.* It names the person; keeping it anywhere
+  undoes the deletion (D42, D43). It lives in `st.session_state` for the life of the dialog
+  and is cleared when the dialog closes.
+- *A 404 when nobody matches.* `deleted: null` with the file untouched is an answer, not an
+  error, and the page says "no one called X is in the record. They may already be deleted."
+  A missing statements file is a 503, because that one really is broken.
+
+*Cost:* anyone who opens the URL can permanently delete anybody, on the instance the next
+judge will use, with no undo and no confirmation beyond one button — a judge who deletes
+Kwame Boateng early leaves the next one without him for the provenance questions. Q4 raised
+that and it is still unanswered; the only reset is a re-extraction, which is slow and runs
+into Q5. A typo that happens to resolve to a real person deletes that person. And the
+confirmation is a page element, not a record: once the dialog closes, "show me that again"
+is not something the system can do, which is deliberate.

@@ -51,47 +51,12 @@ in the EU (D17), and "it is Verda" is not an answer to "where inference runs". S
 open the console and write the region into
 [architecture.md](architecture.md#residency).
 
-## Q4 — How does a judge trigger a deletion on the deployed app?
-
-**Status:** not decided, 2026-09-19. **Needed by:** Saturday evening. It has to work in the
-deployed version, and it gates the receipt in the UI ([deletion.md](deletion.md) steps 3 and 5).
-
-The brief says judges open the URL and use it themselves on Sunday, and that they pick the person
-([challenge.md](challenge.md#how-it-is-tested)). A command we run in a terminal is therefore not
-enough: the page has to be able to call it, and a judge who has never seen the page has to be able
-to use it (CLAUDE.md, definition of done). The deletion itself is built ([D42](decisions.md),
-[D43](decisions.md)); what is missing is a way for the page to reach it.
-
-What any answer has to respect: the frontend holds no logic and has no volume; the backend mounts
-the file read-only and D12 gives the file one writer; the deletion code lives in
-`statement_extraction` and should exist once; and whatever takes the request must not be published
-beyond the compose network, with the frontend calling it from the server side.
-
-| Option | What it takes | Catch |
-|---|---|---|
-| A. A small server built from the extraction image, as a fourth compose service | Same image and code, the shared volume read-write, one endpoint that runs `delete_person` and returns the receipt. The frontend gets a "delete a person" control that shows it. `fastapi` goes back into `statement_extraction`'s dependencies. | A fourth service is a boundary change and needs its own decision. Extraction stopped being a server when D12 made it a job, so the reason [architecture.md](architecture.md) gives for it being FastAPI is out of date. |
-| B. The backend gets a write path | Mount the volume read-write into the backend and add `POST /delete`. | Breaks D12's one writer and the backend's "reads the statements file and nothing else". The deletion code has to be copied into the backend or shared between two packages, so there are two copies to keep the same. |
-| C. We run the command by hand when a judge names someone | Nothing new: `docker compose run --rm --no-deps statement-extraction uv run --frozen python -m src.app.delete "<name>"`. | Judges use the app themselves, so this fails the definition of done. It is a fallback for a demo we run, not a plan for the graded URL. |
-
-**Leaning:** A. It is the only option that keeps the code in one place and the file at one writer.
-The cost of being wrong is a fourth service to build and deploy on Saturday evening. If that slips,
-C is the fallback, and we would say so on Saturday, the way the brief asks us to about hosting.
-
-Two things to settle whichever option wins. Anyone who opens the page can delete anybody,
-permanently, on the instance the next judge will use: a judge who deletes Kwame Boateng early
-leaves the next judge without him for provenance questions such as P1. A reset needs either a
-re-extraction (slow, and see Q5) or a copy of the file, which is a second copy of every name
-(rule 4). And the receipt names the person, so the page shows it and stores nothing.
-
-Whoever decides: write the entry in [decisions.md](decisions.md), update
-[deletion.md](deletion.md) steps 3 and 5, and delete this.
-
 ## Q5 — What stops our own tooling from undoing a deletion?
 
 **Status:** not decided, 2026-09-19. **Needed by:** before the first deletion on the deployed VM.
 
-A deletion rewrites `statements.json`, and two things we already do can put the person back or
-leave them behind:
+A deletion rewrites `statements.json` — from the page or from the command, both in the backend
+(D46) — and two things we already do can put the person back or leave them behind:
 
 1. **`docker compose up` re-runs extraction.** D12 says so in its cost line, and `extract.py`
    writes the file unconditionally. A restart or a redeploy after a deletion brings the person back
