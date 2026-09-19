@@ -20,6 +20,7 @@ class Settings:
     llm_api_key: str | None
     statements_file: str
     dummy_llm: bool
+    dummy_llm_delay_seconds: float
 
 
 @lru_cache
@@ -39,4 +40,5 @@ def get_settings() -> Settings:
         llm_api_key=os.environ.get("LLM_API_KEY"),
         statements_file=os.environ.get("STATEMENTS_FILE_PATH", str(default_statements_file)),
         dummy_llm=dummy_llm,
+        dummy_llm_delay_seconds=float(os.environ.get("DUMMY_LLM_DELAY_SECONDS", "0.05")),
     )

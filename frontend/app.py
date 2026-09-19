@@ -1,6 +1,8 @@
 import html
+import json
 import os
 import re
+from collections.abc import Iterator
 from datetime import date as date_cls
 
 import requests
@@ -92,8 +94,8 @@ button p{margin:0;}
 .sc-question{margin:4px 0 0;font-family:'Space Grotesk',sans-serif;font-size:20px;
   line-height:28px;font-weight:600;color:var(--text);}
 
-.sc-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;
-  padding:24px;box-shadow:0 1px 2px rgba(9,20,31,0.08);}
+.sc-card, .st-key-live_card{background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;padding:24px;box-shadow:0 1px 2px rgba(9,20,31,0.08);}
 .sc-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
 .sc-card-title{display:flex;align-items:center;gap:8px;font-family:'Space Grotesk',sans-serif;
   font-size:16px;line-height:24px;font-weight:600;color:var(--text);}
@@ -191,25 +193,60 @@ def render_answer_html(answer: str) -> str:
     )
 
 
-def ask_backend(question: str) -> tuple[str, list[dict], str]:
-    """Returns (answer, citations, error) — exactly one of answer/error is set."""
+def _http_error_message(exc: requests.HTTPError) -> str:
     try:
-        response = requests.post(
+        detail = exc.response.json().get("detail", exc.response.text)
+    except ValueError:
+        detail = exc.response.text
+    return f"Backend returned an error: {detail}"
+
+
+def _iter_sse_events(lines: Iterator[str]) -> Iterator[tuple[str, str]]:
+    """Groups raw SSE lines (as requests.Response.iter_lines yields them, blank lines
+    included) into (event, data) pairs, per the wire format _sse() writes on the backend."""
+    event_type = None
+    data_lines: list[str] = []
+    for line in lines:
+        if line:
+            if line.startswith("event:"):
+                event_type = line.removeprefix("event:").strip()
+            elif line.startswith("data:"):
+                data_lines.append(line.removeprefix("data:").strip())
+            continue
+        if event_type is not None:
+            yield event_type, "\n".join(data_lines)
+        event_type, data_lines = None, []
+    if event_type is not None:
+        yield event_type, "\n".join(data_lines)
+
+
+def stream_backend(question: str, result: dict) -> Iterator[str]:
+    """Yields answer text chunks as they arrive over SSE. Citations (or an error) are
+    written into `result` once known, since the caller only consumes text chunks here —
+    exactly one of result["citations"]/result["error"] is set once this generator is spent."""
+    try:
+        with requests.post(
             f"{BACKEND_URL}/query",
-            json={"question": question, "stream": False},
+            json={"question": question, "stream": True},
             timeout=REQUEST_TIMEOUT,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        return payload.get("answer", ""), payload.get("citations", []), ""
+            stream=True,
+        ) as response:
+            response.raise_for_status()
+            for event_type, data in _iter_sse_events(response.iter_lines(decode_unicode=True)):
+                try:
+                    payload = json.loads(data) if data else {}
+                except json.JSONDecodeError:
+                    continue
+                if event_type == "token":
+                    text = payload.get("text", "")
+                    if text:
+                        yield text
+                elif event_type == "citations":
+                    result["citations"] = payload.get("citations", [])
     except requests.HTTPError as exc:
-        try:
-            detail = exc.response.json().get("detail", exc.response.text)
-        except ValueError:
-            detail = exc.response.text
-        return "", [], f"Backend returned an error: {detail}"
+        result["error"] = _http_error_message(exc)
     except requests.RequestException as exc:
-        return "", [], f"Could not reach the backend: {exc}"
+        result["error"] = f"Could not reach the backend: {exc}"
 
 
 def render_source_row(citation: dict) -> None:
@@ -297,33 +334,57 @@ with st.container(key="header"):
                 st.rerun()
 
 if not st.session_state.question:
-    with st.container(key="hero"):
-        st.markdown(
-            '<h1 class="sc-hero-title">Ask about your workshop notes</h1>'
-            '<p class="sc-hero-sub">scandAI answers from your meeting notes, status reports '
-            "and email threads. Every claim traces back to its source.</p>",
-            unsafe_allow_html=True,
-        )
-        with st.container(key="ask_form"):
-            with st.form(key="ask_form_inner", clear_on_submit=False, border=False):
-                input_col, button_col = st.columns([11, 1])
-                with input_col:
-                    question_input = st.text_input(
-                        "Ask a question about your documents",
-                        placeholder="Ask a question about your documents…",
-                        label_visibility="collapsed",
-                    )
-                with button_col:
-                    submitted = st.form_submit_button("↑")
-        st.markdown('<div class="sc-hint">Press Enter to ask</div>', unsafe_allow_html=True)
+    hero_placeholder = st.empty()
+    with hero_placeholder.container():
+        with st.container(key="hero"):
+            st.markdown(
+                '<h1 class="sc-hero-title">Ask about your workshop notes</h1>'
+                '<p class="sc-hero-sub">scandAI answers from your meeting notes, status reports '
+                "and email threads. Every claim traces back to its source.</p>",
+                unsafe_allow_html=True,
+            )
+            with st.container(key="ask_form"):
+                with st.form(key="ask_form_inner", clear_on_submit=False, border=False):
+                    input_col, button_col = st.columns([11, 1])
+                    with input_col:
+                        question_input = st.text_input(
+                            "Ask a question about your documents",
+                            placeholder="Ask a question about your documents…",
+                            label_visibility="collapsed",
+                        )
+                    with button_col:
+                        submitted = st.form_submit_button("↑")
+            st.markdown('<div class="sc-hint">Press Enter to ask</div>', unsafe_allow_html=True)
 
     if submitted and question_input.strip():
-        with st.spinner("Asking the backend…"):
-            answer, citations, error = ask_backend(question_input.strip())
-        st.session_state.question = question_input.strip()
+        hero_placeholder.empty()
+        question = question_input.strip()
+        with st.container(key="answer_page"):
+            st.markdown(
+                f'<span class="sc-asked-label">You asked</span>'
+                f'<h1 class="sc-question">{html.escape(question)}</h1>',
+                unsafe_allow_html=True,
+            )
+            with st.container(key="live_card"):
+                st.markdown(
+                    '<div class="sc-card-header"><div class="sc-card-title">'
+                    '<span class="sc-logo-sm"><span>s</span></span><span>Answer</span>'
+                    "</div></div>",
+                    unsafe_allow_html=True,
+                )
+                answer_placeholder = st.empty()
+                result: dict = {}
+                answer = ""
+                for chunk in stream_backend(question, result):
+                    answer += chunk
+                    answer_placeholder.markdown(
+                        f'<p class="sc-answer-text">{render_answer_html(answer)}</p>',
+                        unsafe_allow_html=True,
+                    )
+        st.session_state.question = question
         st.session_state.answer = answer
-        st.session_state.citations = citations
-        st.session_state.error = error
+        st.session_state.citations = result.get("citations", [])
+        st.session_state.error = result.get("error", "")
         st.rerun()
 
 else:

@@ -29,6 +29,9 @@ Optional:
   the `LLM_BASE_URL`/`LLM_MODEL` requirement. For exercising `/query` end to end — both
   `stream: false` and the SSE `stream: true` path — without Ollama running. See
   [decisions.md](../docs/decisions.md) D15.
+- `DUMMY_LLM_DELAY_SECONDS` — seconds slept between tokens on the dummy SSE stream, so it
+  reads like a real streaming answer instead of arriving all at once. Defaults to `0.05`;
+  only used when `DUMMY_LLM` is set.
 Run with `uv run fastapi dev` from the `backend` folder
 
 In a container: `docker compose up backend` from the repo root. Compose sets both required
