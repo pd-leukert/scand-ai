@@ -22,7 +22,6 @@ STATEMENT = {
     "span": "We will ship on Friday.",
     "claim": "Bo Ray said the work ships on Friday.",
     "act": "report",
-    "agreed_by": [],
     "org": None,
     "role": None,
     "handling": "none",

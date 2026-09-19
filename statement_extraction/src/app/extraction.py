@@ -19,7 +19,6 @@ SCHEMA = {
                     "span": {"type": "string"},
                     "claim": {"type": "string"},
                     "act": {"type": "string", "enum": ACTS},
-                    "agreed_by": {"type": "array", "items": {"type": "string"}},
                     "org": {"type": ["string", "null"]},
                     "role": {"type": ["string", "null"]},
                     "handling": {"type": "string", "enum": HANDLING},
@@ -29,7 +28,6 @@ SCHEMA = {
                     "span",
                     "claim",
                     "act",
-                    "agreed_by",
                     "org",
                     "role",
                     "handling",
@@ -59,8 +57,6 @@ something another person proposed or said), decision (something is settled), rep
 status is given), question, or objection. An idea floated by one side is a proposal even if it \
 sounds firm. Only call something a decision or agreement if the words show it was settled. \
 Repeating the previous line is not an agreement.
-- agreed_by: the names of the people who explicitly agreed to this statement in this document. \
-An empty list if nobody did. Silence is not agreement.
 - org and role: the speaker's organisation and job title, only if the document states them in \
 the attendee list or a signature. Copy the words. Otherwise null.
 - handling: personal if the statement reveals private details of someone's life, such as health, \
@@ -73,8 +69,36 @@ statement. Use only the text you are given. Do not use anything you know from el
 greetings, filler and small talk. If the text contains no statements, return an empty list.\
 """
 
-# One chat call: messages in, the parsed JSON answer out.
-Chat = Callable[[list[dict[str, str]]], dict]
+LINK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "response": {"type": "string", "enum": ["accepted", "rejected", "none"]},
+        "by": {"type": "string"},
+        "quote": {"type": "string"},
+    },
+    "required": ["response", "by", "quote"],
+}
+
+LINK_PROMPT = """\
+You read a statement from a project record and the statements that came after it. Decide how the \
+people who came after responded to it.
+
+- accepted: a later statement, by someone else, clearly says yes, confirms it, or does what was \
+asked.
+- rejected: a later statement, by someone else, clearly says no or refuses.
+- none: no later statement answers it. Do not guess. Most statements get none.
+
+Return response, by (the name shown before the responding statement, exactly as shown) and quote \
+(the exact words of that statement that show it, copied exactly). If the response is none, leave \
+by and quote empty. Use only the text you are given.\
+"""
+
+# Later statements by other people shown for each one. Replies come soon after.
+LOOKAHEAD = 8
+
+# One chat call: messages in, the parsed JSON answer out. The optional schema is what the answer
+# must match; it defaults to the extraction schema.
+Chat = Callable[..., dict]
 
 
 def extract_document(
@@ -84,7 +108,6 @@ def extract_document(
     records: list[dict] = []
     dropped: Counter[str] = Counter()
     seen: set[tuple[int, str]] = set()
-    speakers = {unit.name for unit in doc.units if unit.name} | set(doc.attendees)
     header = _header(doc)
     for batch in _batches(doc.units, batch_words):
         messages = [
@@ -128,10 +151,69 @@ def extract_document(
                         "org": _stated(item["org"], context),
                         "role": _stated(item["role"], context),
                     },
-                    "agreed_by": [name for name in item["agreed_by"] if name in speakers],
+                    "agreed_by": [],
                 }
             )
     return records, dropped
+
+
+def link_agreements(records: list[dict], chat: Chat) -> Counter[str]:
+    """Fill agreed_by on each proposal or question from what other people said after it.
+
+    A response counts only if the person it names has a later statement that contains the quoted
+    words. Each link carries the id of that statement, so the agreement has a receipt too.
+    """
+    counts: Counter[str] = Counter()
+    ordered = sorted(records, key=_when)
+    for i, record in enumerate(ordered):
+        if record["act"] not in ("proposal", "question"):
+            continue
+        later = [r for r in ordered[i + 1 :] if _who(r) != _who(record)][:LOOKAHEAD]
+        if not later:
+            continue
+        shown = "\n".join(
+            f"[{_who(r)}, {r['position']}, {r['stated_on']}] {r['span']}" for r in later
+        )
+        asked = f"Statement, by {_who(record)} ({record['stated_on']}):\n{record['span']}"
+        messages = [
+            {"role": "system", "content": LINK_PROMPT},
+            {
+                "role": "user",
+                "content": f"{asked}\n\nStatements after it, by other people:\n{shown}",
+            },
+        ]
+        answer = chat(messages, schema=LINK_SCHEMA)
+        if answer["response"] == "none":
+            counts["no response"] += 1
+            continue
+        quote = _flat(answer["quote"])
+        source = next(
+            (r for r in later if _who(r) == answer["by"] and quote and quote in _flat(r["span"])),
+            None,
+        )
+        if source is None:
+            counts["response not found in the text"] += 1
+        elif answer["response"] == "accepted":
+            counts["accepted"] += 1
+            actor = source["actor"]
+            record["agreed_by"].append(
+                {"name": actor["name"], "label": actor["label"], "statement": source["id"]}
+            )
+        else:
+            counts["rejected"] += 1
+    return counts
+
+
+def _who(record: dict) -> str:
+    actor = record["actor"]
+    return actor["name"] or actor["label"] or "unknown"
+
+
+def _when(record: dict) -> tuple[int, ...]:
+    """Time order within a document: a thread lists its newest message first."""
+    if record["doc_type"] == "transcript":
+        return (record["lines"][0],)
+    return (-int(record["position"].split()[1]), record["lines"][0])
 
 
 def _batches(units: list[Unit], batch_words: int) -> list[range]:

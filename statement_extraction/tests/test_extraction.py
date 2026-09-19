@@ -32,7 +32,6 @@ def statement(**overrides) -> dict:
         "span": "I propose we drop the operator ID field from the extract.",
         "claim": "Bo Ray proposed dropping the operator ID field from the extract.",
         "act": "proposal",
-        "agreed_by": ["Ann Lee"],
         "org": "RELEX",
         "role": None,
         "handling": "none",
@@ -63,7 +62,7 @@ def test_a_good_statement_becomes_a_record_with_code_derived_location_and_actor(
             "act": "proposal",
             "handling": "none",
             "actor": {"name": "Bo Ray", "label": None, "org": "RELEX", "role": None},
-            "agreed_by": ["Ann Lee"],
+            "agreed_by": [],
         }
     ]
 
@@ -108,11 +107,6 @@ def test_the_same_quote_twice_is_kept_once():
     assert dropped == {"duplicate": 1}
 
 
-def test_agreers_who_are_not_in_the_document_are_left_out():
-    records, _ = run(statement(agreed_by=["Ann Lee", "Marco Rossi"]))
-    assert records[0]["agreed_by"] == ["Ann Lee"]
-
-
 def test_an_organisation_or_role_the_document_does_not_state_is_null():
     stated, _ = run(statement(org="RELEX", role="Solution Architect"))
     assert stated[0]["actor"]["org"] == "RELEX"
@@ -120,7 +114,7 @@ def test_an_organisation_or_role_the_document_does_not_state_is_null():
 
 
 def test_a_speaker_the_file_does_not_name_stays_unnamed():
-    records, _ = run(statement(unit=3, span="Waste was roughly 3", agreed_by=[], org=None))
+    records, _ = run(statement(unit=3, span="Waste was roughly 3", org=None))
     assert records[0]["actor"] == {"name": None, "label": "Guest 1", "org": None, "role": None}
 
 

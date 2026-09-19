@@ -48,7 +48,7 @@ They were written separately, and the backend's own doc calls its shape interim
 | Quote | `span` | `verbatim_span` |
 | Kind of statement | `act` | `speech_act` |
 | Speaker | `actor: {name, label, org, role}`, any may be null | `actor: {name, organization, role}`, all required strings |
-| Who agreed | `agreed_by`: a list of names | `agreed_by`: a list of actor objects |
+| Who agreed | `agreed_by`: a list of `{name, label, statement}`, where `statement` is the id of the agreeing statement ([D20](decisions.md)) | `agreed_by`: a list of actor objects |
 | Dates | `stated_on`, `doc_date` | `statement_date` (date and time), `document_date` |
 | Extra | `claim`, `handling`, `doc_type`, `position` | none |
 
@@ -84,7 +84,10 @@ console. The working plan is a plain copy to the VM ([extraction.md](extraction.
 - [x] Parsers, quote matcher, extraction step, job, compose layers, tests (49), docs
 - [x] Container verified in Docker on one transcript; every citation checked against the source
 - [ ] Commit and push the latest changes
-- [ ] Run one email and one report through the job (only transcripts have run with a model)
+- [x] Run one email and one report through the job (67 statements, every citation checks out)
+- [x] Fill in who agreed with a second pass, with a receipt for each agreement ([D20](decisions.md))
+- [ ] Fill in role and organisation from signatures: the model got only 9 of 21 in the email
+- [ ] Check the linking pass on transcripts, where replies are less clear than in an email
 - [ ] Full run on a GPU with the real model
 - [ ] Measure the statements file in tokens (blocker 3)
 - [ ] Agree one statements format with the backend (blocker 2)

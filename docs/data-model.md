@@ -110,7 +110,10 @@ Rules the layout encodes:
   the file says: `Me` / `Them` in the `INTERNAL` transcripts, and `Unknown Speaker`,
   `Guest 1` or a dial-in number in some Teams transcripts. The real speaker is not
   recoverable and we do not guess.
-- **`agreed_by` empty means no agreement is recorded**, which is a valid and useful answer.
+- **`agreed_by` lists who accepted a proposal or question**, found in a second pass (D20). Each
+  entry is `{name, label, statement}`, where `statement` is the id of the agreeing statement,
+  so the agreement has its own receipt. Empty means no answer was found among the next eight
+  statements by other people, which is a valid and useful answer but not proof that none exists.
 - **`handling` is `none`, `personal` or `confidential`** (D19), the model's judgement of
   whether the statement was meant to be private. It drives the flag the agent raises unasked.
 - **`claim` is a one-sentence restatement**, kept beside the verbatim `span` so the

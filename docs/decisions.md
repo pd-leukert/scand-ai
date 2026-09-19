@@ -414,3 +414,35 @@ and the same one may be marked differently on two runs. A request such as "do no
 any shared document" refers to the line before it, so it only works when both are in the same
 extraction batch. And this flags, it does not protect: the statement stays in the file and in
 the receipt. Whether an answer should withhold the detail is an open question.
+
+---
+
+## D20 — 2026-09-19 — Accepted
+**Who agreed is found in a second pass over the statements, and every agreement points at the statement where it happened.**
+
+The first extraction pass no longer asks the model for `agreed_by`. On real runs it left it empty
+in all 67 statements, including a plain "Confirmed" in reply to a request (email 07, practice
+question P3). A second pass, `link_agreements`, takes each proposal or question and the next
+eight statements by other people, in time order (a thread lists its newest message first), and
+asks whether one of them accepted it, rejected it, or nobody answered. The model names the
+responder and quotes their words. The link is kept only if that person has a later statement
+containing the quote. Each entry in `agreed_by` is `{name, label, statement}`: `statement` is the
+id of the agreeing statement, so "who agreed" has a receipt the way a quote does, and `label`
+holds what the file calls a speaker it does not name. The pass runs over extracted statements
+at extraction time, not over source documents, and writes into the same file, so there is no new
+artifact.
+
+Rejected:
+- *Asking for it in the first pass.* Already tried; the model never filled it in.
+- *Matching words such as "yes" or "confirmed".* It misses paraphrase ("that works for us") and
+  fires on a yes that answers a different point.
+- *Keeping names without the statement id.* An agreement nobody can check.
+- *Storing refusals.* They are counted but not stored yet.
+
+*Cost:* one more model call per proposal or question, a few hundred to over a thousand on the
+full corpus. The quote check proves the words exist in that person's statement, not that they
+answer this proposal: in the test on email 07, two of three links were right and one attached a
+"Confirmed" that was about a different point. A reply more than eight statements away is missed.
+So an empty `agreed_by` now means no answer was found nearby, not that none exists. It is also the
+place a wrong "who agreed" could reach an answer, so the answering side should cite the agreeing
+statement whenever it says someone agreed.

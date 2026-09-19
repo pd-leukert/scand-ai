@@ -11,11 +11,11 @@ from pathlib import Path
 import httpx
 
 from .documents import load_corpus
-from .extraction import SCHEMA, Chat, extract_document
+from .extraction import SCHEMA, Chat, extract_document, link_agreements
 
 
 def _ollama_chat(client: httpx.Client, model: str, num_ctx: int) -> Chat:
-    def chat(messages: list[dict[str, str]]) -> dict:
+    def chat(messages: list[dict[str, str]], schema: dict = SCHEMA) -> dict:
         response = client.post(
             "/api/chat",
             json={
@@ -25,7 +25,7 @@ def _ollama_chat(client: httpx.Client, model: str, num_ctx: int) -> Chat:
                 # Copying is not a reasoning task, and a thinking model can spend its whole
                 # budget thinking and return nothing.
                 "think": False,
-                "format": SCHEMA,
+                "format": schema,
                 "options": {"temperature": 0, "num_ctx": num_ctx},
             },
         )
@@ -65,11 +65,14 @@ def main(filters: list[str]) -> int:
         chat = _ollama_chat(client, model, num_ctx)
         for doc in docs:
             found, dropped = extract_document(doc, chat, batch_words)
+            linked = link_agreements(found, chat)
             records.extend(found)
             if not found:
                 empty.append(doc.doc_id)
             note = f", dropped {dict(dropped)}" if dropped else ""
-            print(f"{doc.doc_id}: {len(found)} statements{note}", flush=True)
+            print(
+                f"{doc.doc_id}: {len(found)} statements{note}, responses {dict(linked)}", flush=True
+            )
 
     # Nothing extracted must not look like a finished record: exit non-zero so compose holds
     # the backend, and leave any earlier file alone.

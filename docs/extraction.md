@@ -31,6 +31,11 @@ quote is not there word for word, the statement is dropped. The speaker comes fr
 document, never from the model. A role or organisation is kept only if those words are in the
 document. So a citation in the output always points at real text.
 
+A second pass then fills in **who agreed**. For each proposal or question it shows the model the
+next few statements by other people and asks whether one accepted it. The link is kept only if
+the named person's statement contains the quoted words, and it records the id of that statement,
+so an agreement has a receipt too (D20).
+
 ## What is in the branch
 
 | Path | What it is |
@@ -253,8 +258,10 @@ once extraction has run for real (D18).
 
 The team-wide list of what is left, with owners and blockers, is in [whats-left.md](whats-left.md).
 
-- **Only one transcript has been run with a real model.** Emails and report threads are
-  covered by parser tests, but the prompt has not been tried on them.
+- **Only three documents have been run with a real model**: one transcript, one email and one
+  report, all on a 4B model. All 67 statements from the email and report had citations that
+  check out. Two gaps showed: the model filled in a speaker's role and organisation for only
+  9 of 21 email statements, and it never linked an agreement until the second pass was added.
 - **The full run is blocked on a GPU.** Until it exists there is no `statements.jsonl` for the
   backend to use.
 - **The private-material flag (`handling`, D19) is not reliable at 4B.** It found an explicit
