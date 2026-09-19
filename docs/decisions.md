@@ -231,7 +231,7 @@ configuration in the same change.
 
 ---
 
-## D14 — 2026-09-19 — Accepted
+## D14 — 2026-09-19 — Superseded by D27
 **The Streamlit chat UI calls `/query` non-streaming (`stream: false`), not the SSE path.**
 
 `/query` already supports token-by-token streaming for the prose answer. Rejected: parsing
@@ -732,3 +732,31 @@ being installed never implied the runtime was registered. Fixed on the host with
 `nvidia-ctk runtime configure --runtime=docker` and a daemon restart, not in the repo. D25's
 verification note already said to check this; it is recorded here because the check came
 back negative and the fix lives on the machine, where the repo cannot show it.
+
+---
+
+## D27 — 2026-09-19 — Accepted — Supersedes D14
+**The Streamlit UI now calls `/query` with `stream: true` and renders tokens live via
+`st.write_stream`, reversing D14.**
+
+D14 deferred this because nothing answered `/query` yet, so a blocking wait couldn't feel
+slow. D15's `DUMMY_LLM` changed that — there is now a real, working SSE producer to test
+against, including its per-token pacing (`DUMMY_LLM_DELAY_SECONDS`), and D14's non-streaming
+call meant that pacing was invisible: the frontend waited for the whole response and painted
+it in one frame regardless of how the backend staged it. Rejected: keeping `stream: false`
+and adding an artificial `time.sleep` before returning, which fakes a wait without proving
+the actual SSE path — the frame types, the citation-withholding-until-`done` behaviour — is
+wired correctly end to end.
+
+Implementation: `stream_backend()` parses the `text/event-stream` body into `(event, data)`
+pairs by hand (`requests` has no SSE client), yields `token` text to `st.write_stream`, and
+stashes `citations`/`error` into a plain dict passed by reference, since `write_stream` only
+wants a string generator. The hero's ask form is held in an `st.empty()` so it can be
+cleared the instant a submission is detected, rather than sitting above the streaming answer
+for the run's duration — cosmetic, but two visibly different pages open at once is not
+"boring" either.
+
+*Cost:* the SSE parser is hand-rolled and untested against a real Ollama stream — `_sse()`
+on the backend and this parser have to keep agreeing on the wire format, and nothing
+currently pins that beyond D15's dummy path and manual testing. If the frame format ever
+changes, both sides need updating together.

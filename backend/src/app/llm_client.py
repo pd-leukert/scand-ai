@@ -24,7 +24,6 @@ from .config import get_settings
 from .schemas import Citation, QueryResponse
 from .statements import Statement, load_statements
 
-DUMMY_TOKEN_DELAY_SECONDS = 0.03
 DUMMY_STATEMENT_LIMIT = 5
 
 CITATION_DELIMITER = "===CITATIONS==="
@@ -127,10 +126,12 @@ def _dummy_answer(statements: dict[str, Statement]) -> tuple[str, list[str]]:
 
 
 async def _stream_dummy_answer(statements: dict[str, Statement]) -> AsyncIterator[bytes]:
+    delay_seconds = get_settings().dummy_llm_delay_seconds
     prose, statement_ids = _dummy_answer(statements)
     for token in re.findall(r"\S+\s*", prose):
         yield _sse("token", {"text": token})
-        await asyncio.sleep(DUMMY_TOKEN_DELAY_SECONDS)
+        if delay_seconds > 0:
+            await asyncio.sleep(delay_seconds)
     citations = _resolve_citations(statement_ids, statements)
     yield _sse("citations", {"citations": [c.model_dump(mode="json") for c in citations]})
     yield _sse("done", {})
