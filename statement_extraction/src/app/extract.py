@@ -49,7 +49,7 @@ def main(filters: list[str]) -> int:
     batch_words = int(os.environ.get("EXTRACTION_BATCH_WORDS", "300"))
     timeout = float(os.environ.get("EXTRACTION_TIMEOUT", "600"))
     corpus = Path(os.environ.get("CORPUS_DIR", Path(__file__).parents[3] / "corpus"))
-    out = Path(os.environ.get("STATEMENTS_PATH", "statements.jsonl"))
+    out = Path(os.environ.get("STATEMENTS_PATH", "statements.json"))
 
     docs = load_corpus(corpus)
     total = len(docs)
@@ -83,8 +83,7 @@ def main(filters: list[str]) -> int:
     # Written whole or not at all: a half-written file must never look like the record.
     tmp = out.with_name(out.name + ".tmp")
     tmp.write_text(
-        "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
-        encoding="utf-8",
+        json.dumps({"statements": records}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     os.replace(tmp, out)
     partial = f" (only {len(docs)} of {total} documents)" if len(docs) < total else ""

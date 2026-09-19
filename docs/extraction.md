@@ -10,7 +10,7 @@ extraction box in that picture, opened up.
 The extraction job reads the 45 documents in `corpus/`, splits each into speaker turns and
 email messages, asks a local LLM (Ollama) to pull out the statements in each one, and keeps a
 statement only if its quoted words really appear in the turn or message it came from. The
-result is one file, `statements.jsonl`: one statement per line, each with the document, the
+result is one file, `statements.json`: a list of statements, each with the document, the
 line numbers, the position, the verbatim quote, who said it, and what kind of statement it is.
 Nothing here calls an outside model API, and nothing in it runs when a user asks a question.
 
@@ -19,7 +19,7 @@ Nothing here calls an outside model API, and nothing in it runs when a user asks
 ```
 corpus/*.txt ──► documents.py ──► extraction.py ──► matching.py ──► extract.py
  45 files        turns and         asks the model     keeps a          writes
- (read-only)     messages, with    for statements     statement only   statements.jsonl
+ (read-only)     messages, with    for statements     statement only   statements.json
                  line numbers      (Ollama)           if its quote     (all or nothing)
                                                       is really there
 ```
@@ -43,12 +43,12 @@ so an agreement has a receipt too (D20).
 | `statement_extraction/src/app/documents.py` | Parsers: Teams transcripts, `INTERNAL` transcripts, email and report threads. Every line keeps its number in the file. |
 | `statement_extraction/src/app/matching.py` | `find_span`: finds a quote inside one unit, or returns nothing. |
 | `statement_extraction/src/app/extraction.py` | The prompt, the answer schema, batching, and all the keep-or-drop checks. |
-| `statement_extraction/src/app/extract.py` | The job: calls Ollama, runs the checks, writes `statements.jsonl`. |
+| `statement_extraction/src/app/extract.py` | The job: calls Ollama, runs the checks, writes `statements.json`. |
 | `statement_extraction/tests/` | 45 tests. Most use small fixtures. Some read the real corpus and skip if it is missing. |
 | `compose.extraction.yaml` | Adds Ollama, a model download step, the corpus mount and the real job command. |
 | `compose.gpu.yaml` | Gives the Ollama container the NVIDIA GPU. Use it on Verda only. |
 | `docs/decisions.md` | D14 to D19 are new; D7 and D13 are marked partly superseded. |
-| `.gitignore`, `.dockerignore` | `corpus/` and `statements.jsonl` are never committed or sent into an image. |
+| `.gitignore`, `.dockerignore` | `corpus/` and `statements.json` are never committed or sent into an image. |
 
 `compose.yaml` is unchanged on purpose: `docker compose up` still starts the placeholder
 extraction job, the backend and the frontend, so nobody working on those is blocked.
@@ -84,7 +84,7 @@ not name (`Me`, `Them`, `Guest 1`, a dial-in number) have `name: null` and the l
 |---|---|---|
 | The 45 source documents | `corpus/` at the repo root. Gitignored, so each person copies it in. | `corpus/` in the repo folder on the VM, mounted read-only into the extraction container. |
 | Downloaded model weights | Ollama's own folder (native install), or the `ollama` Docker volume. | The `ollama` Docker volume on the VM disk. |
-| The statements file | `statements.jsonl` in the folder you ran from, or in the `statements` Docker volume. | The `statements` Docker volume, at `/data/statements.jsonl`. |
+| The statements file | `statements.json` in the folder you ran from, or in the `statements` Docker volume. | The `statements` Docker volume, at `/data/statements.json`. |
 
 Everything stays on infrastructure we control. The Ollama container is not published outside the
 compose network, and the code has no path to any outside model API (D14).
@@ -116,7 +116,7 @@ $env:EXTRACTION_MODEL = "<model>"; uv run python -m src.app.extract 09_2025-02
 ```
 
 The words after `extract` are matched against document ids, so `09_2025-02` picks one
-transcript and no words means the whole corpus. The output goes to `statements.jsonl` in the
+transcript and no words means the whole corpus. The output goes to `statements.json` in the
 current folder. On a slow machine, also set `EXTRACTION_TIMEOUT` (seconds per model call), for
 example `2700`.
 
@@ -146,7 +146,7 @@ frontend until it finishes, which takes many hours without a GPU.
 | `EXTRACTION_NUM_CTX` | `8192` | Context window asked of Ollama. |
 | `EXTRACTION_TIMEOUT` | `600` | Seconds to wait for one model call. |
 | `CORPUS_DIR` | `corpus/` at the repo root | Where the documents are. Compose sets `/corpus`. |
-| `STATEMENTS_PATH` | `statements.jsonl` | Where the result is written. The image sets `/data/statements.jsonl`. |
+| `STATEMENTS_PATH` | `statements.json` | Where the result is written. The image sets `/data/statements.json`. |
 
 ## Run it on Verda
 
@@ -183,7 +183,7 @@ many statements were kept and how many were dropped, and why. When it prints
 The file lives in the `statements` volume. To read it:
 
 ```
-docker run --rm -v scand-ai_statements:/data alpine cat /data/statements.jsonl > statements.jsonl
+docker run --rm -v scand-ai_statements:/data alpine cat /data/statements.json > statements.json
 ```
 
 On Windows in Git Bash, put `MSYS_NO_PATHCONV=1` in front of `docker`. Git Bash otherwise rewrites
@@ -207,7 +207,7 @@ the commands are the same, on `main`.
   downloaded model. Plain `down` keeps them.
 - **Every `docker compose up` re-runs extraction** (D12), which is long and costs GPU time. To
   restart just the backend: `docker compose up --no-deps backend`.
-- **A filtered run overwrites the file.** Running one document writes a `statements.jsonl` with
+- **A filtered run overwrites the file.** Running one document writes a `statements.json` with
   only that document's statements, replacing a full one in the same place. Use `STATEMENTS_PATH`
   to send test runs somewhere else.
 - **The job now fails on an empty result.** It exits non-zero if nothing was extracted (and
@@ -262,7 +262,7 @@ The team-wide list of what is left, with owners and blockers, is in [whats-left.
   report, all on a 4B model. All 67 statements from the email and report had citations that
   check out. Two gaps showed: the model filled in a speaker's role and organisation for only
   9 of 21 email statements, and it never linked an agreement until the second pass was added.
-- **The full run is blocked on a GPU.** Until it exists there is no `statements.jsonl` for the
+- **The full run is blocked on a GPU.** Until it exists there is no `statements.json` for the
   backend to use.
 - **The private-material flag (`handling`, D19) is not reliable at 4B.** It found an explicit
   request not to share something and the statement it referred to, but missed the most blatant

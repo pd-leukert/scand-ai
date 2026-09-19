@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -36,9 +37,9 @@ def job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (folder / "01_kickoff.txt").write_text(TRANSCRIPT, encoding="utf-8")
     monkeypatch.setenv("EXTRACTION_MODEL", "any-model")
     monkeypatch.setenv("CORPUS_DIR", str(tmp_path / "corpus"))
-    monkeypatch.setenv("STATEMENTS_PATH", str(tmp_path / "statements.jsonl"))
+    monkeypatch.setenv("STATEMENTS_PATH", str(tmp_path / "statements.json"))
     monkeypatch.setattr(extract, "_ollama_chat", lambda *_: lambda messages: answer(messages))
-    return tmp_path / "statements.jsonl"
+    return tmp_path / "statements.json"
 
 
 def answer(messages: list[dict[str, str]]) -> dict:
@@ -47,9 +48,9 @@ def answer(messages: list[dict[str, str]]) -> dict:
 
 def test_a_run_that_finds_statements_writes_the_file_and_succeeds(job: Path):
     assert extract.main([]) == 0
-    lines = job.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 1
-    assert '"doc_id": "transcripts/01_kickoff"' in lines[0]
+    written = json.loads(job.read_text(encoding="utf-8"))
+    assert list(written) == ["statements"]
+    assert [s["doc_id"] for s in written["statements"]] == ["transcripts/01_kickoff"]
 
 
 def test_a_run_that_finds_nothing_fails_and_leaves_the_old_file_alone(
@@ -72,7 +73,7 @@ def test_a_document_with_no_statements_fails_the_job_but_keeps_the_rest(
 
     monkeypatch.setattr(extract, "_ollama_chat", lambda *_: only_the_first)
     assert extract.main([]) == 1
-    assert len(job.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(json.loads(job.read_text(encoding="utf-8"))["statements"]) == 1
 
 
 def test_no_model_named_means_no_run(job: Path, monkeypatch: pytest.MonkeyPatch):

@@ -451,3 +451,27 @@ different request). Both wobbles came from a 4B model and may be smaller on a bi
 So an empty `agreed_by` now means no answer was found nearby, not that none exists. It is also the
 place a wrong "who agreed" could reach an answer, so the answering side should cite the agreeing
 statement whenever it says someone agreed.
+
+---
+
+## D21 — 2026-09-19 — Accepted
+**The statements file is one JSON object, `{"statements": [...]}`, not JSON Lines. Supersedes the JSONL choice in the D15 layout.**
+
+The record layout drafted with D15 called for JSON Lines, and the Docker image's default was
+changed from `statements.json` to `statements.jsonl` to match, without a log entry. Neither had
+a reason behind it. The job writes the file once, whole or not at all, and the answering side
+reads it whole (D2), so nothing uses appending, streaming or line-by-line recovery, which is
+what JSONL is for. The backend on `niek/backend` loads one JSON object of exactly this shape,
+and the original Dockerfile default was already `.json`. So extraction now writes
+`{"statements": [...]}` to `statements.json`, indented so it reads and diffs by eye.
+
+Rejected:
+- *Keeping JSONL and changing the backend to read lines.* More change on the other side for no
+  gain.
+- *Writing both.* A second copy of the derived artifact, and a second place a deleted name would
+  survive (working agreement, rule 4).
+
+*Cost:* it is one JSON document, so it can only be read whole. A truncated file would be
+unreadable rather than partly usable, which the write-then-rename already prevents. If the file
+ever grows too big to read whole, JSONL is the way back. The field names still differ from the
+backend's; see blocker 2 in [whats-left.md](whats-left.md).

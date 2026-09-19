@@ -18,7 +18,7 @@ RUN uv sync --locked --package statement-extraction --no-install-workspace
 COPY statement_extraction/ statement_extraction/
 
 # Where this job writes the statements file. It is the only writer.
-ENV STATEMENTS_PATH=/data/statements.jsonl
+ENV STATEMENTS_PATH=/data/statements.json
 
 WORKDIR /app/statement_extraction
 EXPOSE 8000

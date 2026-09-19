@@ -7,7 +7,7 @@ Run with `uv run fastapi dev` from the `statement_extraction` folder
 
 Extract with `EXTRACTION_MODEL=<model> uv run python -m src.app.extract [DOC_ID_SUBSTRING ...]`.
 It needs Ollama at `OLLAMA_HOST` (default `http://localhost:11434`) with that model pulled, and
-writes `statements.jsonl` (or `STATEMENTS_PATH`). Give a substring such as `07_2024` to try
+writes `statements.json` (or `STATEMENTS_PATH`). Give a substring such as `07_2024` to try
 one document. In compose: `docker compose -f compose.yaml -f compose.extraction.yaml up`, plus
 `-f compose.gpu.yaml` on an NVIDIA machine. See docs/decisions.md D18.
 

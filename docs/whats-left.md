@@ -41,7 +41,7 @@ They were written separately, and the backend's own doc calls its shape interim
 
 | | Extraction writes ([D15](decisions.md)) | Backend reads (`niek/backend`) |
 |---|---|---|
-| File | `statements.jsonl`, one JSON object per line | one JSON object, `{"statements": [...]}` |
+| File | `statements.json`, one JSON object `{"statements": [...]}` | the same. This part matches since [D21](decisions.md) |
 | Path setting | `STATEMENTS_PATH` | `STATEMENTS_FILE_PATH` |
 | Document | `doc_id` | `document_id` |
 | Where | `lines: [a, b]` and `position` | `location: {page, line_start, line_end}`, no position |

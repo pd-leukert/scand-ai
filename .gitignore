@@ -221,5 +221,5 @@ __marimo__/
 corpus/
 
 # The derived statements file from a local run, never committed (D12)
-statements.jsonl
-statements.jsonl.tmp
+statements.json
+statements.json.tmp

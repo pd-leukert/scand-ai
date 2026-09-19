@@ -71,7 +71,8 @@ See [decisions.md](decisions.md) D3 for what we replace names with, and
 
 ## Draft record layout
 
-The statements file is JSONL, one statement per line. Draft: expect it to move after the
+The statements file is one JSON object, `{"statements": [...]}`, with one entry per statement
+(D21). Draft: expect it to move after the
 first extraction run. Example, from `emails/07_op-id-field-exclusion.txt`:
 
 ```json
