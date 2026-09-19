@@ -259,7 +259,29 @@ many statements were kept and how many were dropped, and why. When it prints
 
 ### Getting the result out
 
-The file lives in the `statements` volume. To read it:
+The file lives in the `statements` volume. Compose names it `scand-ai_statements`, because the
+project name is `scand-ai`. These commands work the same on your laptop and on the VM, and they
+show what a local Docker test run wrote too.
+
+Check that the volume and the file exist:
+
+```
+docker volume ls
+docker run --rm -v scand-ai_statements:/data alpine ls -l /data
+```
+
+If `statements.json` is not listed, no run has finished. The job writes the file only at the end,
+and writes nothing if the run failed or found no statements.
+
+Look inside it, and count the statements. The count uses `verbatim_span` because `"id"` also appears
+inside `agreed_by`:
+
+```
+docker run --rm -v scand-ai_statements:/data alpine head -c 1500 /data/statements.json
+docker run --rm -v scand-ai_statements:/data alpine grep -c '"verbatim_span"' /data/statements.json
+```
+
+Copy it out to a normal file:
 
 ```
 docker run --rm -v scand-ai_statements:/data alpine cat /data/statements.json > statements.json
@@ -267,7 +289,10 @@ docker run --rm -v scand-ai_statements:/data alpine cat /data/statements.json > 
 
 On Windows in Git Bash, put `MSYS_NO_PATHCONV=1` in front of `docker`. Git Bash otherwise rewrites
 `/data/...` into a path under `C:/Program Files/Git/` and the command silently reads nothing.
-PowerShell does not have this problem. The same command shows what a local Docker test run wrote.
+PowerShell does not have this problem.
+
+In Docker Desktop you can also open **Volumes**, click `scand-ai_statements`, and use the **Data**
+tab to browse the file and save it.
 
 ### Pointing new changes at Verda
 
