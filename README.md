@@ -65,6 +65,7 @@ docs/
   practice-questions.md  the nine practice questions, verbatim — answers are a deliverable
   architecture.md   containers, dataflow, deployment, residency
   data-model.md     what a statement records, and why (conceptual)
+  reconciled-file.md  what LLM B does and how to read reconciled.json (start here)
   decisions.md      the decision log — read before proposing changes
   open-questions.md what we have deliberately not decided yet
   roadmap.md        MVP boundary, planned extensions, honest limits

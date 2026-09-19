@@ -95,7 +95,8 @@ that runs backwards in time. See [roadmap.md](roadmap.md).
 ## What the reconciliation pass adds
 
 A second pass over the aggregated statements (D40) writes a second file. It does not change
-a statement; it wraps them.
+a statement; it wraps them. A plain-words walkthrough with an annotated example is in
+[reconciled-file.md](reconciled-file.md).
 
 - **Topics.** Every statement is in exactly one topic, a short kebab-case subject tag
   (`bakery-workstream-scope`). Statements the pass could not tag sit in one `untagged`

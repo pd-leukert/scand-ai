@@ -1654,3 +1654,60 @@ convention only: change either side's numbering and the backend derives the wron
 silently. The token guard's constant (D43) was measured on the old, larger shape and not
 re-measured on this one; the shorter ids may tokenise worse per character, so treat its estimate
 as an order of magnitude until it is.
+
+
+---
+
+## D45 — 2026-09-19 — Accepted *(extends D44; supersedes D44's "omit `current`" only in that it stays rejected)*
+**The answering model is shown the reconciled record as a speaker table, a column list and one
+array per statement — not one object per statement — and is no longer sent the topic summaries,
+the problem notes, or the relation list. A statement's relations arrive as a `links` cell on the
+statement they land on. `reconciled.json` itself is unchanged.**
+
+D44 measured the model's payload and found 47% of it in relations and problems, and 37% in one
+templated `unanswered` problem per statement. The rest was keys: `speech_act`, `organization` and
+`statement_date` repeated on every statement. Direction from David: shrink it further, keeping
+what the model needs to answer from this file alone.
+
+- **Rows and a speaker table.** `who` is a key into `people`, which is keyed on
+  *(name, organisation)*, not on name: the archive has one name at two organisations, and prompt
+  rule 3 (use the organisation recorded on the statement) needs the pair. The keys are written once,
+  in `columns`.
+- **No problems, no summaries in the payload.** A templated problem is ids in a sentence — it says
+  nothing the status and the relation do not. The model-written ones say the same in prose, and
+  prose is what deletion cannot redact and what D42 caught inventing a claim about a named
+  person. Prompt rule 7 ("if a topic has a problem, cite it") is replaced by the links.
+- **`links`, from the side the relation lands on.** `superseded-by`, `corrected-by`,
+  `answered-by`, `conflicts-with` (on both ends). Every relation survives, so nothing that used to
+  be reachable is lost, including `answers`, which no status carries. Stored once per relation, not
+  on both ends, except for conflicts.
+- **Compact separators** in `json.dumps` — about 6% of characters for nothing, both modes.
+- **`status` stays explicit, including `current`.** I proposed omitting it; D44 rejected that and
+  the reasoning holds harder in a row, where an empty cell is ambiguous.
+- **Citations are untouched.** `_resolve_citations`, `Citation` and the SSE payload are as before;
+  the model still cites aliases and the backend still copies everything from its own record. A
+  test pins the fields the frontend reads.
+
+Measured on the mock reconciled file (8 statements): the record the model receives went from
+2,740 to 1,511 characters, −45%, and the system prompt got slightly shorter. That is a tiny sample;
+the per-statement saving grows with statement count, and the problems saving depends on how many
+unanswered statements a real run has. Re-measure on a real artifact.
+
+Rejected:
+- *Changing `reconciled.json` itself.* D44 already argued the alias belongs where the tokens are
+  spent, and a different file shape would put `statements.json` and `reconciled.json` out of step.
+- *Abbreviating `speech_act` (`prop`, `deci`, …).* Saves a few characters a row and gives a small
+  model codes to decode; the full words are in the prompt already.
+- *Keeping the summaries "because they help overview questions".* The statements answer them, and
+  a summary the model cites is one we cannot resolve to a statement.
+
+*Cost:* a row is harder for a small model than an object: this has been run against unit tests and
+the mock, **not** against the answering model on the VM, and `qwen3:0.6b` is exactly the model that
+stopped citing when base64 took the keys away (D43). Try it on the real model before Sunday and
+fall back to objects if it stops citing. The model no longer sees the `unanswered` problem
+entries, so it relies on `status: unresolved` alone for those. The topic summaries and problem notes
+are still written to `reconciled.json` and still loaded, and now nothing in the answering path reads
+them: the deletion risk they carry (D40, rule 4) is unchanged for as long as they stay in the file,
+and `KEEP_PROSE = False` is now free — it costs the answering path nothing. Left on, since the
+deletion PR owns that switch. The token guard's constant (D43) was measured on JSON objects; rows
+tokenise differently, so it is an order of magnitude here too.

@@ -5,13 +5,13 @@ import pytest
 from src.app import config
 from src.app.llm_client import (
     CITATION_DELIMITER,
-    _aliased,
     _aliases,
     _build_messages,
     _resolve_citations,
     _split_response,
     context_shortfall,
 )
+from src.app.schemas import QueryResponse
 from src.app.statements import load_record, load_statements, load_statements_record
 
 DOC = "emails/07_op-id"
@@ -101,47 +101,56 @@ def test_the_model_is_shown_aliases_and_never_a_real_id(record):
     assert DOC not in sent and OTHER not in sent
 
 
-def test_a_reconciled_statement_is_shown_with_only_what_the_file_carries(record):
-    payload = json.loads(_build_messages("q", record)[1]["content"].split("\n")[1])
+def sent_record(record) -> dict:
+    return json.loads(_build_messages("q", record)[1]["content"].split("\n")[1])
+
+
+def test_a_statement_is_one_row_under_a_column_list_and_a_speaker_table(record):
+    payload = sent_record(record)
+    assert payload["columns"] == ["id", "who", "speech_act", "date", "status", "links", "claim"]
+    assert payload["people"] == {"p1": ["Priya Nair", "Acme"]}
     [topic] = payload["topics"]
-    [first, *_] = topic["statements"]
-    assert set(first) == {"id", "claim", "actor", "speech_act", "statement_date", "status"}
-    assert first["statement_date"] == "2025-11-24"  # a day, not a datetime
-    assert topic["relations"] == [{"from": "s2", "to": "s1", "kind": "supersedes"}]
-    assert topic["summary"]["statements"] == ["s2"]
-    assert payload["problems"][0]["statements"] == ["s1", "s2"]
+    assert set(topic) == {"topic", "statements"}
+    assert topic["statements"][0] == [
+        "s1", "p1", "report", "2025-11-24", "stale", ["superseded-by:s2"], "Claim number 1."
+    ]  # fmt: skip
 
 
-def test_a_note_naming_an_id_that_starts_another_is_aliased_longest_first():
-    """`emails/07_op-id#1` is the start of `emails/07_op-id#12`. Replace the short one first and
-    the long one is left as `s1` + `2` — a wrong alias that looks like a real one."""
-    aliases = {f"{DOC}#1": "s1", f"{DOC}#12": "s2"}
-    want = "s2 supersedes s1; the record still reads as if s1 stands."
-    assert _aliased(NOTE, aliases, [f"{DOC}#1", f"{DOC}#12"]) == want
-    assert _aliased(NOTE, aliases, [f"{DOC}#12", f"{DOC}#1"]) == want
+def test_the_same_name_at_two_organisations_is_two_speakers(tmp_path: Path):
+    """A person is not a string (rule 3): the organisation is part of who spoke."""
+    load_record.cache_clear()
+    elsewhere = statement(3, OTHER) | {"actor": {"name": "Priya Nair", "organization": "Other"}}
+    topic = {"topic": "t", "relations": [], "statements": [statement(1), elsewhere]}
+    payload = sent_record(load_record(reconciled(tmp_path, topics=[topic], problems=[])))
+    assert payload["people"] == {"p1": ["Priya Nair", "Acme"], "p2": ["Priya Nair", "Other"]}
+    assert [row[1] for row in payload["topics"][0]["statements"]] == ["p1", "p2"]
 
 
-def test_an_id_that_is_the_tail_of_another_is_replaced_after_it():
-    """The other way round: `a/x#1` sits inside `b/a/x#1`, so replacing it first leaves the
-    longer id as `b` + `s1`. The lookahead cannot see this one; the ordering has to."""
-    aliases = {"a/x#1": "s1", "b/a/x#1": "s2"}
-    note = "b/a/x#1 supersedes a/x#1."
-    assert _aliased(note, aliases, ["a/x#1", "b/a/x#1"]) == "s2 supersedes s1."
+def test_a_relation_is_read_on_the_statement_it_lands_on_and_a_conflict_on_both(tmp_path: Path):
+    load_record.cache_clear()
+    relations = [
+        {"from": f"{DOC}#2", "to": f"{DOC}#1", "kind": "corrects"},
+        {"from": f"{DOC}#3", "to": f"{DOC}#1", "kind": "answers"},
+        {"from": f"{DOC}#3", "to": f"{DOC}#2", "kind": "conflicts-with"},
+    ]
+    statements = [statement(1, status="never-true"), statement(2, status="disputed"), statement(3)]
+    topic = {"topic": "t", "relations": relations, "statements": statements}
+    payload = sent_record(load_record(reconciled(tmp_path, topics=[topic], problems=[])))
+    links = {row[0]: row[5] for row in payload["topics"][0]["statements"]}
+    assert links == {
+        "s1": ["corrected-by:s2", "answered-by:s3"],
+        "s2": ["conflicts-with:s3"],
+        "s3": ["conflicts-with:s2"],
+    }
 
 
-def test_an_id_the_note_names_but_the_problem_does_not_list_is_left_alone_not_half_replaced():
-    """The other protection: a note that mentions `#12` while only `#1` is listed must not have
-    its `#1` swapped for an alias and leave `s1` + `2` behind. Templated notes only name what
-    their problem lists, so this is a guard on the boundary, not something seen in a run."""
-    aliases = {f"{DOC}#1": "s1", f"{DOC}#12": "s2"}
-    assert _aliased(f"See {DOC}#12 and {DOC}#1.", aliases, [f"{DOC}#1"]) == f"See {DOC}#12 and s1."
-
-
-def test_a_problem_note_reaches_the_model_with_aliases_in_it(record):
-    payload = json.loads(_build_messages("q", record)[1]["content"].split("\n")[1])
-    assert payload["problems"][0]["note"] == (
-        "s2 supersedes s1; the record still reads as if s1 stands."
-    )
+def test_prose_the_model_wrote_is_not_sent(record):
+    """Summaries and problem notes say nothing the statuses and links do not, and they are the
+    text a deleted name can hide in (D45)."""
+    sent = _build_messages("q", record)[1]["content"]
+    assert "The field was dropped." not in sent
+    assert "still reads as if" not in sent
+    assert "problems" not in sent and "summary" not in sent
 
 
 def test_a_cited_alias_becomes_a_citation_copied_from_our_own_record(record):
@@ -158,6 +167,26 @@ def test_anything_the_model_cites_that_we_did_not_hand_out_is_dropped(record):
     cited = ["s99", f"{DOC}#1", "", "s2"]
     citations = _resolve_citations(cited, record)
     assert [(c.marker, c.statement_id) for c in citations] == [(4, f"{DOC}#12")]
+
+
+def test_a_model_reply_becomes_citations_the_frontend_can_render(record):
+    """The whole path from what the model writes to what the frontend reads: the reply cites
+    aliases, the backend turns them into citations from its own record, and the JSON that goes
+    out carries every field frontend/app.py's render_source_row reads (D45 changed the model's
+    view of the record, not this)."""
+    raw = f'It was superseded [1] by the later one [2].\n{CITATION_DELIMITER}\n["s1", "s2"]'
+    prose, cited = _split_response(raw)
+    citations = _resolve_citations(cited, record)
+    sent = QueryResponse(answer=prose, citations=citations).model_dump(mode="json")
+    first, second = sent["citations"]
+    assert (first["marker"], first["statement_id"]) == (1, f"{DOC}#1")
+    assert (first["status"], first["status_receipts"]) == ("stale", [f"{DOC}#12"])
+    assert (second["marker"], second["status"], second["status_receipts"]) == (2, "current", [])
+    assert set(first) == {
+        "marker", "statement_id", "document_id", "claim", "actor", "speech_act",
+        "statement_date", "document_date", "status", "status_receipts",
+    }  # fmt: skip
+    assert first["actor"] == {"name": "Priya Nair", "organization": "Acme"}
 
 
 def test_a_reply_is_split_into_prose_and_the_aliases_it_cites():

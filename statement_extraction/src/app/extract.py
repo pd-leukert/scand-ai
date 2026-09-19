@@ -164,7 +164,10 @@ def main(filters: list[str]) -> int:
     # behind, which is the point, but a clean run does not.
     shutil.rmtree(per_doc_dir, ignore_errors=True)
     partial = f" (only {len(docs)} of {total} documents)" if len(docs) < total else ""
-    print(f"Wrote {total_statements} statements across {len(merged)} documents to {out}{partial}")
+    print(
+        f"Wrote {total_statements} statements across {len(merged)} documents to {out}{partial} "
+        f"— {_file_size(out)}"
+    )
     if empty:
         # A document with no statements is a silent gap in the record, so the job fails.
         print(f"No statements from: {', '.join(empty)}", file=sys.stderr)
@@ -205,13 +208,19 @@ def main(filters: list[str]) -> int:
     print(
         f"Wrote {reconciled['statement_count']} statements in {reconciled['topic_count']} topics, "
         f"{reconciled['relation_count']} relations and {reconciled['problem_count']} problems "
-        f"to {reconciled_out}"
+        f"to {reconciled_out} — {_file_size(reconciled_out)}"
     )
     for problem in problems:
         print(f"  [{problem['kind']}] {problem['topic']}: {', '.join(problem['statements'])}")
         print(f"    {problem['note']}")
     print(_size_report(out, reconciled_out))
     return 0
+
+
+def _file_size(path: Path) -> str:
+    """How large a finished output file is, for the line that announces it."""
+    size = path.stat().st_size
+    return f"{size / 1000:,.1f} kB ({size:,} bytes)"
 
 
 # Bytes of reconciled.json per token of answering prompt. The file is not what is sent: the

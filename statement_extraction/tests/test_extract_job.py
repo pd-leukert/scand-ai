@@ -216,6 +216,17 @@ def test_the_run_reports_what_the_reconciled_file_costs_in_context(
     assert "OLLAMA_CONTEXT_LENGTH and LLM_NUM_CTX above" in printed
 
 
+def test_each_pass_announces_how_large_its_output_file_is(
+    job: Path, capsys: pytest.CaptureFixture[str]
+):
+    assert extract.main([]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    [first] = [line for line in lines if line.startswith("Wrote") and "documents to" in line]
+    [second] = [line for line in lines if line.startswith("Wrote") and "topics" in line]
+    for line, path in ((first, job), (second, job.with_name("reconciled.json"))):
+        assert path.name in line and f"({path.stat().st_size:,} bytes)" in line
+
+
 def test_the_run_prints_the_problems_it_found(
     job: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):

@@ -27,7 +27,7 @@ import httpx
 
 from .config import get_settings
 from .schemas import Citation, QueryResponse
-from .statements import Record, Statement, load_record, load_statements_record
+from .statements import Record, Statement, Topic, load_record, load_statements_record
 
 DUMMY_STATEMENT_LIMIT = 5
 
@@ -36,23 +36,24 @@ CITATION_DELIMITER = "===CITATIONS==="
 SYSTEM_PROMPT = f"""You are the answering agent for a rollout decision record.
 
 You will be given the complete set of statements extracted from two years of project \
-documents, grouped by topic, as a JSON object under STATEMENTS. It has two lists.
+documents, grouped by topic, as a JSON object under STATEMENTS. It has three parts.
 
-topics: every statement is in exactly one topic. A topic has a summary (one sentence, which \
-may be missing), its relations, and its statements. Each statement has an id, a claim (one \
-plain sentence saying what was stated), who said it (with their organisation), what kind of \
-speech act it is (proposal, agreement, decision, report, question, objection), when it was \
-said, and a status. There is no verbatim quote and no line location on a statement — the \
-claim is the only record of what was said. A relation has a from, a to and a kind \
-(supersedes, corrects, conflicts-with or answers), and names two statement ids in the same \
-topic.
+people: a table of speakers. Each key (p1, p2, …) maps to [name, organisation]. Someone \
+recorded under two organisations has two keys.
 
-problems: places where a reader of the record would go wrong. Each has a kind (reversal, \
-never-true, conflict or unanswered), the topic, the statement ids involved, and a note.
+columns: the cells of a statement row, in order.
+
+topics: every statement is in exactly one topic. A topic has a name and its statements, one \
+row each, with the cells named by columns: id, who (a key into people), speech_act (proposal, \
+agreement, decision, report, question or objection), date, status, links, and claim (one plain \
+sentence saying what was stated). There is no verbatim quote and no line location — the claim \
+is the only record of what was said.
 
 A status is one of current, stale, never-true, disputed or unresolved. It was worked out \
-before you saw the record, from the relations, and it is the only information about currency \
-there is.
+before you saw the record, from the relations between statements, and it is the only \
+information about currency there is. links is a list of "<relation>:<id>" that name another \
+statement in the same topic: superseded-by, corrected-by, answered-by, or conflicts-with. \
+No links means nothing in the record relates to that statement.
 
 Rules, no exceptions:
 1. Answer only from the statements given. Never use outside knowledge. If nothing in the \
@@ -69,19 +70,16 @@ be reported as what the record says. An unresolved statement is a proposal or qu
 nobody answered: say so, and do not report it as agreed.
 5. A stale statement was true when it was said and replaced later. A never-true statement was \
 wrong when it was recorded. Never report either as fact. Report it as what the record once \
-said, say which of the two it is, and name and cite the statements whose relations \
-superseded or corrected it. Do not leave it out: an answer about how something changed cites \
-both the old statement and what replaced it.
+said, say which of the two it is, and name and cite the statements its links point at \
+(superseded-by, corrected-by). Do not leave it out: an answer about how something changed \
+cites both the old statement and what replaced it.
 6. If two statements are disputed, report the conflict and cite both. Do not decide which \
-one holds. If two statements seem to disagree and no relation says so, say what each says \
+one holds. If two statements seem to disagree and no link says so, say what each says \
 and do not decide either.
-7. If the question touches a topic that has an entry under problems, say what the problem \
-is and cite the statements it names.
-8. Cite every factual claim. Mark it inline with a bracketed number, e.g. [1], in the \
+7. Cite every factual claim. Mark it inline with a bracketed number, e.g. [1], in the \
 order statements are first used, starting at 1. Reuse the same number for repeated use of \
-the same statement. Cite statements, never a summary or a note: those point at statements, \
-they are not evidence.
-9. After the answer, on its own line, write exactly `{CITATION_DELIMITER}` followed by a \
+the same statement.
+8. After the answer, on its own line, write exactly `{CITATION_DELIMITER}` followed by a \
 JSON array of the statement ids the markers refer to, in marker order, e.g. \
 ["s4", "s11"]. If you used no markers, write an empty array []. Use only ids that appear in \
 the statements you were given — never invent one.
@@ -134,10 +132,10 @@ def _aliases(record: Record) -> dict[str, str]:
     return {statement_id: f"s{number}" for number, statement_id in enumerate(record.statements, 1)}
 
 
-def _statement_view(statement: Statement, alias: str, *, with_status: bool) -> dict:
-    """What the model is shown of one statement. Nothing document-level (the id it already
-    has says which document, and the date is the statement's own) and nothing the file does
-    not carry (D37)."""
+def _statement_view(statement: Statement, alias: str) -> dict:
+    """What the model is shown of one statement in the statements-file mode, which is not
+    reconciled and so has no status. Nothing document-level (the document is the group it sits
+    in) and nothing the file does not carry (D37). The reconciled mode uses rows instead (D45)."""
     view = {
         "id": alias,
         "claim": statement.claim,
@@ -147,57 +145,72 @@ def _statement_view(statement: Statement, alias: str, *, with_status: bool) -> d
         # statement that nobody recorded.
         "statement_date": statement.statement_date.date().isoformat(),
     }
-    if with_status:
-        view["status"] = statement.status
     return view
 
 
-def _aliased(text: str, aliases: dict[str, str], ids: list[str]) -> str:
-    """A note with the real ids it names swapped for their aliases. The templated problem notes
-    write ids into their sentence, and a real id left in one would be a long id the model could
-    cite and we would then drop.
+COLUMNS = ["id", "who", "speech_act", "date", "status", "links", "claim"]
 
-    Two separate guards, each with its own test. Longest first, because one id can be the tail
-    of another ("a/x#1" inside "b/a/x#1") and replacing the short one first leaves the long one
-    as "b" + an alias. And never in front of a digit, because "doc#1" is the start of "doc#12":
-    a note that names #12 without listing it must not come out as an alias followed by "2"."""
-    for statement_id in sorted(ids, key=len, reverse=True):
-        text = re.sub(re.escape(statement_id) + r"(?!\d)", aliases[statement_id], text)
-    return text
+# What a relation says about the statement it points at, and — for the one that is symmetric —
+# about the one it starts from.
+LINK_NAMES = {
+    "supersedes": "superseded-by",
+    "corrects": "corrected-by",
+    "answers": "answered-by",
+    "conflicts-with": "conflicts-with",
+}
+
+
+def _links(topic: Topic, aliases: dict[str, str]) -> dict[str, list[str]]:
+    """For each statement in the topic, the other statements its relations name, from its side.
+    A relation is stored once, on its topic, and read on the statement it lands on; a conflict
+    is read on both. Only ids we handed out come out, aliased."""
+    links: dict[str, list[str]] = {}
+    for r in topic.relations:
+        links.setdefault(r.to, []).append(f"{LINK_NAMES[r.kind]}:{aliases[r.source]}")
+        if r.kind == "conflicts-with":
+            links.setdefault(r.source, []).append(f"conflicts-with:{aliases[r.to]}")
+    return links
 
 
 def _reconciled_payload(record: Record, aliases: dict[str, str]) -> dict:
-    return {
-        "topics": [
+    """The record as the model is shown it (D45): a speaker table once, a column list once, and
+    one array per statement instead of one object — the keys were most of what each statement
+    cost. Nothing the model could cite is dropped: statements, their status, and the relations
+    that produced it. Topic summaries and problem notes are not sent, because the statuses and
+    links say everything they say, and they are the model-written prose D40 could not redact.
+    """
+    people: dict[tuple[str, str], str] = {}
+
+    def who(statement: Statement) -> str:
+        person = (statement.actor.name, statement.actor.organization)
+        return people.setdefault(person, f"p{len(people) + 1}")
+
+    topics = []
+    for topic in record.topics:
+        links = _links(topic, aliases)
+        topics.append(
             {
                 "topic": topic.topic,
-                "summary": (
-                    {
-                        "text": topic.summary.text,
-                        "statements": [aliases[i] for i in topic.summary.statements],
-                    }
-                    if topic.summary
-                    else None
-                ),
-                "relations": [
-                    {"from": aliases[r.source], "to": aliases[r.to], "kind": r.kind}
-                    for r in topic.relations
-                ],
                 "statements": [
-                    _statement_view(s, aliases[s.id], with_status=True) for s in topic.statements
+                    [
+                        aliases[s.id],
+                        who(s),
+                        s.speech_act,
+                        # Dates only: extraction writes a day, and a datetime would add a time
+                        # of day to every statement that nobody recorded.
+                        s.statement_date.date().isoformat(),
+                        s.status,
+                        links.get(s.id, []),
+                        s.claim,
+                    ]
+                    for s in topic.statements
                 ],
             }
-            for topic in record.topics
-        ],
-        "problems": [
-            {
-                "kind": problem.kind,
-                "topic": problem.topic,
-                "statements": [aliases[i] for i in problem.statements],
-                "note": _aliased(problem.note, aliases, problem.statements),
-            }
-            for problem in record.problems
-        ],
+        )
+    return {
+        "people": {key: list(person) for person, key in people.items()},
+        "columns": COLUMNS,
+        "topics": topics,
     }
 
 
@@ -218,9 +231,7 @@ def _grouped_payload(record: Record, aliases: dict[str, str]) -> list[dict]:
                 "statements": [],
             },
         )
-        group["statements"].append(
-            _statement_view(statement, aliases[statement.id], with_status=False)
-        )
+        group["statements"].append(_statement_view(statement, aliases[statement.id]))
     return list(groups.values())
 
 
@@ -232,9 +243,10 @@ def _build_messages(question: str, record: Record) -> list[dict[str, str]]:
         prompt, payload = STATEMENTS_ONLY_PROMPT, _grouped_payload(record, aliases)
     # The record goes before the question so that the long half of the prompt is a stable
     # prefix: Ollama caches it, and only the question is processed again on the next one.
+    record_json = json.dumps(payload, separators=(",", ":"))
     return [
         {"role": "system", "content": prompt},
-        {"role": "user", "content": f"STATEMENTS:\n{json.dumps(payload)}\n\nQUESTION:\n{question}"},
+        {"role": "user", "content": f"STATEMENTS:\n{record_json}\n\nQUESTION:\n{question}"},
     ]
 
 
