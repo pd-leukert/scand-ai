@@ -18,6 +18,7 @@ class Settings:
     llm_base_url: str | None
     llm_model: str | None
     llm_api_key: str | None
+    llm_timeout: float
     statements_file: str
     dummy_llm: bool
     dummy_llm_delay_seconds: float
@@ -38,6 +39,7 @@ def get_settings() -> Settings:
         llm_base_url=base_url.rstrip("/") if base_url else None,
         llm_model=model,
         llm_api_key=os.environ.get("LLM_API_KEY"),
+        llm_timeout=float(os.environ.get("LLM_TIMEOUT", "600")),
         statements_file=os.environ.get("STATEMENTS_FILE_PATH", str(default_statements_file)),
         dummy_llm=dummy_llm,
         dummy_llm_delay_seconds=float(os.environ.get("DUMMY_LLM_DELAY_SECONDS", "0.05")),
