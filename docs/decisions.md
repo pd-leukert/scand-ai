@@ -488,3 +488,140 @@ streaming the raw model output straight through, which would put an unvalidated 
 marker in front of a judge before we've checked it resolves to anything real. The buffering
 keeps a safety margin equal to the delimiter's length so the delimiter can't leak a
 fragment of itself if it lands across two upstream chunks.
+
+---
+
+## D23 — 2026-09-19 — Accepted *(supersedes D13's Ollama clause)*
+**Ollama is a compose service with a GPU reservation and a named model volume, and the
+model is pulled by a one-shot job that everything calling a model waits on.**
+
+D13 kept Ollama out of `compose.yaml` until something actually called a model, and said
+whoever added inference adds the service and its configuration in the same change. The
+backend now calls one (D21), so this is that change. The service mirrors the container we
+had been starting by hand on the VM — `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`,
+`OLLAMA_KEEP_ALIVE=30m`, all GPUs reserved — so nothing about the runtime changes, only who
+starts it. Backend and extraction reach it at `http://ollama:11434/v1` over the compose
+network; the loopback publish of `127.0.0.1:11434` is kept so `ollama` and `curl` still
+work when SSH'd into the VM, and it stays off the public interface, which is the same line
+D22 draws for the frontend.
+
+The model name is still not hardcoded: `LLM_MODEL` and `EXTRACTION_LLM_MODEL` are separate
+variables with `qwen3.8:27b-mtp-bf16` as the default for both, and the two are independent
+because the working agreement says never assume extraction and answering use the same one.
+
+**The pull is a job, not a step someone remembers.** `ollama-pull` runs `ollama pull` for
+both models against the server and exits; `statement-extraction` and `backend` both wait
+on `service_completed_successfully`. Rejected:
+- *Pulling by hand after deploy* (`docker exec ollama ollama pull ...`), which is what we
+  did during setup. It works exactly once, on a VM someone has a shell on, and it is
+  invisible to anyone reading the compose file. A judge redeploying, or any of us on
+  Sunday, gets a backend that starts healthy and 404s on the first question.
+- *An entrypoint script in the backend image that pulls on boot.* That is startup logic in
+  application code, which D12 already rejected for the statements file, and it puts the
+  pull in the request path's container.
+- *Baking the weights into an image.* Tens of gigabytes per build, and the model stops
+  being a configuration value.
+
+*Cost:* three. A cold `compose up` now blocks on a multi-gigabyte download before anything
+answers — bounded, since a re-pull of a present model is a no-op, but the first deploy on a
+fresh volume is slow and the failure mode is a job that sits there looking hung. The GPU
+reservation makes the compose file refuse to start on a machine without an NVIDIA runtime,
+so laptop work means running the model elsewhere and overriding the base URLs. And the
+model store is a named volume (`ollama-models`), not the `/root/ollama-data` bind we used
+by hand — a VM that already has the weights there either re-downloads them or has the
+directory copied into the volume once.
+
+---
+
+## D24 — 2026-09-19 — Accepted
+**The laptop/server switch is an override file, `compose.dev.yaml`, not an environment
+variable. It swaps in a small model and drops the GPU reservation.**
+
+Wanted: a laptop runs a tiny model, the VM runs the real one, and nobody edits a file to
+move between them. The obvious shape is a single env var set on the server, and it does
+not work — not because it is inelegant, but because the blocker on a laptop is the GPU
+reservation, not the model name. A machine without the NVIDIA container runtime refuses
+the container outright (`could not select device driver "nvidia"`), and a device
+reservation cannot be disabled by interpolation: we tested `count: ${GPU_COUNT:-0}` and
+the reservation is still sent and still fails. The `deploy` block has to be *absent*, and
+only a merge can remove a key. So the switch is a file:
+
+```
+docker compose -f compose.yaml -f compose.dev.yaml up --build   # laptop
+docker compose up --build                                        # VM, unchanged
+```
+
+`compose.dev.yaml` uses `deploy: !reset null` to delete the reservation, `volumes:
+!override` to swap the VM's weights bind for a named volume, and re-points both model
+variables at `qwen3:0.6b` (~520 MB). Verified on a laptop with no NVIDIA runtime: Ollama
+starts CPU-only, the healthcheck passes, the pull job exits 0, and
+`POST /v1/chat/completions` returns a well-formed answer — the small model is a *reasoning*
+model, but Ollama puts that in a separate `reasoning` field and leaves `content` clean, so
+the `===CITATIONS===` parsing in `llm_client.py` is unaffected.
+
+Rejected:
+- *A single `SCAND_ENV` variable on the server.* What the user asked for and what we tried
+  first. Cannot remove the GPU reservation; see above.
+- *An env var for the model plus a file for the GPU.* Two mechanisms for one switch, and
+  the failure mode is picking one and forgetting the other.
+- *`compose.override.yaml`*, which compose loads automatically. That is the frictionless
+  version on a laptop and a trap on the VM: Coolify deploys the repo, and a file that
+  applies itself silently would put a 0.6B model in front of the judges.
+
+The direction is deliberate: the base file is the server, and the laptop opts out. A
+forgotten flag locally fails loudly with a device-driver error; a forgotten flag on the VM
+is not possible, because there is no flag to forget.
+
+*Cost:* local work is a longer command. `DEV_LLM_MODEL` overrides the small default, and
+`LLM_MODEL`/`EXTRACTION_LLM_MODEL` still win over both, so pinning a mid-sized model for a
+realistic local test stays a one-off env var. And answer *quality* at 0.6B is not
+representative — the dev stack proves the wiring works, never that a prompt is good enough.
+
+---
+
+## D25 — 2026-09-19 — Accepted *(supersedes D24)*
+**Inverted: the compose defaults are a laptop, and the VM sets three environment
+variables. `compose.dev.yaml` is deleted.**
+
+D24 made the base file the server and had laptops opt out with `-f compose.dev.yaml`. The
+reasoning was that a device reservation cannot be disabled by interpolation, which is true
+and still is. What it missed: `deploy.resources.reservations.devices` is not the only way
+to ask for a GPU. `runtime:` is a plain scalar, so it *can* be interpolated —
+`runtime: ${OLLAMA_RUNTIME:-runc}` is off by default and becomes a GPU by setting one
+variable. That removes the reason the switch had to be a file.
+
+So the defaults are now the laptop, and `docker compose up` with no arguments, no flags and
+no `.env` gets a CPU-only stack on `qwen3:0.6b`. The VM sets three variables:
+
+```
+OLLAMA_RUNTIME=nvidia
+OLLAMA_DATA_DIR=/root/ollama-data
+LLM_MODEL=qwen3.8:27b-mtp-bf16
+```
+
+Three and not five, because two things were measured rather than assumed. `OLLAMA_DATA_DIR`
+defaults to `ollama-models`, a bare name compose reads as a named volume, and an absolute
+path turns the same line into a bind mount — one variable covers both. And
+`OLLAMA_FLASH_ATTENTION=1` with `OLLAMA_KV_CACHE_TYPE=q8_0` turn out to be harmless on a
+CPU-only host (llama.cpp reports `flash_attn = enabled`, a q8_0 KV cache, and serves
+normally), so the GPU tuning is unconditional and is not part of the switch.
+`EXTRACTION_LLM_MODEL` defaults to `${LLM_MODEL}`, so the one model variable covers both
+paths while either can still be pinned alone.
+
+Rejected: keeping D24's file and adding an env var for the model only — two mechanisms for
+one switch, the thing D24 itself rejected. Also rejected: `COMPOSE_FILE` in a gitignored
+`.env`, which gives the same zero-argument laptop run but only after each dev creates a
+file, and invisibly.
+
+*Cost, and it is the real one:* D24's best property is gone. It said "a forgotten flag on
+the VM is not possible, because there is no flag to forget" — now there are three, and
+partial states are silent rather than loud. `OLLAMA_RUNTIME` alone gives a GPU serving a
+0.6B model; `LLM_MODEL` alone starts a 27B model on CPU, which will not fail, just crawl;
+and a missing `OLLAMA_DATA_DIR` re-downloads ~54GB into a fresh volume instead of erroring.
+None of these announce themselves. Verified on a laptop with no NVIDIA runtime: the
+defaults pull the small model and answer over `/v1/chat/completions`. **Not** verified:
+`runtime: nvidia` on the VM — `docker run --gpus all` working does not prove a named
+`nvidia` runtime is registered with the daemon, because `--gpus` uses a different code
+path. Check `docker info | grep -A3 -i runtimes` on the VM before trusting this; if
+`nvidia` is not listed, run `nvidia-ctk runtime configure --runtime=docker` and restart
+the daemon, or revert to D24's file-based switch.

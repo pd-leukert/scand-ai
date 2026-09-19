@@ -25,5 +25,11 @@ Optional:
 - `STATEMENTS_FILE_PATH` — defaults to the mock file at `src/app/data/mock_statements.json`.
   Points at the real derived statements file once extraction produces one.
 
-In a container: `docker compose up backend` from the repo root. Compose runs statement
-extraction first and starts this service only once that job has exited.
+In a container: `docker compose up backend` from the repo root. Compose sets both required
+variables for you — `LLM_BASE_URL` points at the `ollama` service and `LLM_MODEL` defaults
+to `qwen3.8:27b-mtp-bf16`, overridable from the environment. It runs statement extraction
+and the model pull first, and starts this service only once both jobs have exited. See
+[decision D23](../docs/decisions.md).
+
+`LLM_MODEL` defaults to a small CPU model so a laptop needs no configuration; the VM sets
+it to the real one ([D25](../docs/decisions.md)).
