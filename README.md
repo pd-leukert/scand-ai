@@ -51,6 +51,7 @@ docs/
   decisions.md      the decision log — read before proposing changes
   roadmap.md        MVP boundary, planned extensions, honest limits
   demo.md           judging prep: what we show, in what order
+  extraction.md     how extraction works and how to run it, locally and on Verda
 CLAUDE.md           working agreement for humans and coding agents
 ```
 
@@ -71,10 +72,13 @@ finished and exited. The UI is then on <http://localhost:8501>. The backend is n
 published — it is reachable from inside the compose network only, which is what
 [architecture.md](docs/architecture.md) asks for.
 
-Ollama is not in the compose file yet, and nothing calls a model. See
-[decision D13](docs/decisions.md).
+That runs the placeholder extraction job. Real extraction, with Ollama, is a separate compose
+layer: see [docs/extraction.md](docs/extraction.md) and [decision D18](docs/decisions.md).
 
 ## Status
 
-Pre-implementation. The documents are not in hand yet and nothing is built. These
-documents describe the intent so that everyone — and every agent — builds the same thing.
+In progress. The documents are in hand. Extraction is built and tested, but has only run on
+one transcript: the full run needs a GPU on Verda, and the backend that answers from the
+statements file, deletion, and the receipts in the UI are not built. See
+[docs/extraction.md](docs/extraction.md). The other documents describe the intent so that
+everyone — and every agent — builds the same thing.
