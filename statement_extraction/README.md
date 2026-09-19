@@ -59,3 +59,12 @@ Compose passes `EXTRACTION_LLM_BASE_URL` (the `ollama` service) and `EXTRACTION_
 and the working agreement says never to assume otherwise. See
 [decision D23](../docs/decisions.md). Nothing reads them yet — the real extraction pass
 does.
+
+## Deleting a person
+
+Not here any more. Deletion runs in the backend, which is still running when someone asks for it
+— this job is not ([D46](../docs/decisions.md)). See [backend/README.md](../backend/README.md)
+and [docs/deletion.md](../docs/deletion.md).
+
+What is still this job's problem: a re-run puts a deleted person back, and an interrupted run
+leaves `documents/` holding every name (open-questions.md, Q5).

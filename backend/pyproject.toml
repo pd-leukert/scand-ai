@@ -15,3 +15,7 @@ dependencies = [
 
 [tool.fastapi]
 entrypoint = "src.app.main:app"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

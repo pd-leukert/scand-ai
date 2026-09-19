@@ -39,3 +39,38 @@ class Citation(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     citations: list[Citation]
+
+
+class DeleteRequest(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class DeletedPerson(BaseModel):
+    """Who was removed, and what the file says in their place."""
+
+    name: str
+    spellings: list[str]
+    placeholder: str
+    statements_changed: int
+    replacements: int
+
+
+class ConsideredPerson(BaseModel):
+    """Someone the request could have meant. `outcome` is "removed" or "left"."""
+
+    name: str
+    statements: int
+    outcome: str
+
+
+class DeleteResponse(BaseModel):
+    """The receipt deletion.delete_person returns, typed.
+
+    `deleted` is null when nobody matched and the file was left alone. It is not stored
+    anywhere: it names the person, and keeping it would undo the deletion (D42).
+    """
+
+    requested: str
+    deleted: DeletedPerson | None
+    considered: list[ConsideredPerson]
+    left_in_place: list[str]

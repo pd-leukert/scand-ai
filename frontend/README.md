@@ -12,6 +12,14 @@ Run with `uv run streamlit run app.py` from the `frontend` folder
 In a container: `docker compose up frontend` from the repo root, then open
 <http://localhost:8501>.
 
+## Deleting a person
+
+"Delete a person" in the header opens a dialog that calls the backend's `POST /delete`. The
+confirmation names who was removed and who was resolved but deliberately left — the archive has
+two people sharing a first name, and that sentence is the difference between a kept bystander and
+a redaction that missed ([D47](../docs/decisions.md)). Nothing about it is stored: the receipt
+lives in session state until the dialog closes. See [docs/deletion.md](../docs/deletion.md).
+
 ## Configuration
 
 - `BACKEND_URL` — where the backend lives. Defaults to `http://localhost:8000`.

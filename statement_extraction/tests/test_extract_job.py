@@ -119,7 +119,7 @@ def test_a_malformed_model_response_does_not_crash_the_whole_run(
     monkeypatch.setattr(extract, "_ollama_chat", lambda *_: broken_for_the_first)
     assert extract.main([]) == 1
     written = json.loads(job.read_text(encoding="utf-8"))
-    assert [s["document_id"] for s in written["statements"]] == ["transcripts/02_other"]
+    assert [d["id"] for d in written["documents"] if d["statements"]] == ["transcripts/02_other"]
 
 
 def test_a_run_that_finds_nothing_fails_and_leaves_the_old_file_alone(
