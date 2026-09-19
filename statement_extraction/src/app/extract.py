@@ -60,7 +60,7 @@ def main(filters: list[str]) -> int:
     # (D23); this job calls Ollama's native /api/chat instead, for schema-constrained
     # output (D28), so the "/v1" the answering path needs is stripped back off here.
     host = os.environ.get("EXTRACTION_LLM_BASE_URL", "http://localhost:11434").removesuffix("/v1")
-    num_ctx = int(os.environ.get("EXTRACTION_NUM_CTX", "8192"))
+    num_ctx = int(os.environ.get("EXTRACTION_NUM_CTX", "32768"))
     timeout = float(os.environ.get("EXTRACTION_TIMEOUT", "600"))
     corpus = Path(os.environ.get("CORPUS_DIR", Path(__file__).parents[3] / "input"))
     out = Path(os.environ.get("STATEMENTS_FILE_PATH", "statements.json"))
@@ -82,8 +82,17 @@ def main(filters: list[str]) -> int:
     with httpx.Client(base_url=host, timeout=timeout) as client:
         chat = _ollama_chat(client, model, num_ctx)
         for doc in docs:
-            found, dropped = extract_document(doc, chat)
-            linked = link_agreements(found, chat)
+            try:
+                found, dropped = extract_document(doc, chat)
+                linked = link_agreements(found, chat)
+            except (httpx.HTTPError, json.JSONDecodeError) as exc:
+                # A truncated or malformed model response must not take the whole corpus
+                # down with it — the documents already written (this loop, D35) and the
+                # ones still to come are both worth more than crashing here. Treated the
+                # same as a document that legitimately produced nothing: recorded in
+                # `empty`, so the job still fails loudly overall.
+                print(f"{doc.doc_id}: extraction call failed ({exc})", file=sys.stderr)
+                found, dropped, linked = [], {}, {}
             if not found:
                 empty.append(doc.doc_id)
             note = f", dropped {dict(dropped)}" if dropped else ""
