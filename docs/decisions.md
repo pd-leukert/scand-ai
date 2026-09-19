@@ -286,3 +286,46 @@ agreement forbids, and an unused service that pulls multi-gigabyte weights slows
 *Cost:* `compose.yaml` and the architecture diagram disagree until extraction actually
 calls a model. Whoever adds inference adds the Ollama service and its `OLLAMA_HOST`
 configuration in the same change.
+
+---
+
+## D14 — 2026-09-19 — Accepted
+**The Streamlit chat UI calls `/query` non-streaming (`stream: false`), not the SSE path.**
+
+`/query` already supports token-by-token streaming for the prose answer. Rejected: parsing
+the `text/event-stream` response by hand and rendering it incrementally. Doable, but it is
+real code — buffering `token`/`citations`/`done` SSE frames inside Streamlit's
+script-rerun model — for a UX gain that does not pay off yet: there is no answering model
+running behind `/query` to make a blocking wait feel slow, and the frontend's only job
+right now is proving the wire-up between the two services works, with citations rendered
+per claim.
+
+*Cost:* once Ollama is wired up, the chat will feel blocking for the length of one full
+answer instead of appearing token by token. Revisit then — the backend side of streaming
+already exists, so this is a frontend-only follow-up, not a new capability to build.
+
+---
+
+## D15 — 2026-09-19 — Accepted
+**`DUMMY_LLM=true` skips the model call and answers from the loaded statements file
+directly, so `/query` (both the plain and SSE paths) can be tested without Ollama.**
+
+Needed a way to exercise the real wire contract — SSE framing, inline `[n]` markers, the
+server-side citation-resolution step — while nothing calls a real model yet (D13). Picked:
+a config flag, checked in `config.py` alongside `LLM_BASE_URL`/`LLM_MODEL`, that swaps in a
+canned answer built from the first few statements in whatever file is already loaded, then
+runs that answer through the *same* `_resolve_citations` function a real model's output
+goes through. Rejected:
+- *A hardcoded fixture in the frontend.* Tests nothing about the backend's SSE framing or
+  citation resolution, and puts response-shaping logic in the one place CLAUDE.md says
+  must hold none.
+- *A separate `/query/dummy` endpoint.* Two routes to keep in sync with the real contract,
+  for a distinction the frontend and the judges' traffic should never need to make.
+
+Because the dummy path still calls `_resolve_citations` against the trusted file, it can't
+emit a citation that isn't real even though no model produced it — the same guarantee rule
+1 asks for, just exercised without inference.
+
+*Cost:* one more branch in `answer_question`/`stream_answer_question` to keep in sync with
+the real path if the response shape changes. Remove it once Ollama answers are the only
+thing anyone needs to test against.
