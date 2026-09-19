@@ -5,9 +5,9 @@ The model never gets to assert a citation directly. It tags claims with brackete
 markers and, at the end of its reply, lists the statement ids those markers refer to. The
 backend then looks each id up in its own trusted copy of the reconciled file and builds
 the citation from that — never from text the model produced. An id the model invents, or
-mangles while copying it out of the record, simply resolves to nothing and is dropped. This
+garbles in its own output, simply resolves to nothing and is dropped. This
 is what CLAUDE.md means by "if code cannot guarantee [a citation], it must emit no
-citation rather than an approximate one" — see decisions.md D21. A statement's status, and
+citation rather than an approximate one" — see decisions.md D21, D42. A statement's status, and
 the ids that justify it, are copied the same way: the model reads a currency, it never
 asserts one (D42).
 
@@ -36,7 +36,7 @@ CITATION_DELIMITER = "===CITATIONS==="
 SYSTEM_PROMPT = f"""You are the answering agent for a rollout decision record.
 
 You will be given the complete set of statements extracted from two years of project \
-documents, grouped by topic, as a JSON object under STATEMENTS. It has three parts.
+documents, grouped by topic, as a JSON object under STATEMENTS_JSON. It has three parts.
 
 people: a table of speakers. Each key (p1, p2, …) maps to [name, organisation]. Someone \
 recorded under two organisations has two keys.
@@ -90,7 +90,7 @@ the statements you were given — never invent one.
 STATEMENTS_ONLY_PROMPT = f"""You are the answering agent for a rollout decision record.
 
 You will be given the complete set of statements extracted from a year of project \
-documents, as a JSON array under STATEMENTS, grouped by document. Each entry is one \
+documents, as a JSON array under STATEMENTS_JSON, grouped by document. Each entry is one \
 document, and has the document's id and date once, plus a list of its statements. Each \
 statement has an id, a claim (one plain sentence saying what was stated), who said it (with \
 their organisation), what kind of speech act it is (proposal, agreement, decision, report, \
@@ -241,12 +241,12 @@ def _build_messages(question: str, record: Record) -> list[dict[str, str]]:
         prompt, payload = SYSTEM_PROMPT, _reconciled_payload(record, aliases)
     else:
         prompt, payload = STATEMENTS_ONLY_PROMPT, _grouped_payload(record, aliases)
-    # The record goes before the question so that the long half of the prompt is a stable
-    # prefix: Ollama caches it, and only the question is processed again on the next one.
+    # The question comes first and the record after it (D41): its own decision, not this
+    # function's to reverse.
     record_json = json.dumps(payload, separators=(",", ":"))
     return [
         {"role": "system", "content": prompt},
-        {"role": "user", "content": f"STATEMENTS:\n{record_json}\n\nQUESTION:\n{question}"},
+        {"role": "user", "content": f"QUESTION:\n{question}\n\nSTATEMENTS_JSON:\n{record_json}"},
     ]
 
 

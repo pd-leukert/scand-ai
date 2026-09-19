@@ -102,7 +102,7 @@ def test_the_model_is_shown_aliases_and_never_a_real_id(record):
 
 
 def sent_record(record) -> dict:
-    return json.loads(_build_messages("q", record)[1]["content"].split("\n")[1])
+    return json.loads(_build_messages("q", record)[1]["content"].split("\n")[-1])
 
 
 def test_a_statement_is_one_row_under_a_column_list_and_a_speaker_table(record):
@@ -216,7 +216,7 @@ def test_a_statements_only_record_is_grouped_by_document_and_carries_no_status(t
     load_statements.cache_clear()
     record = load_statements_record(str(path))
     assert record.reconciled is False
-    payload = json.loads(_build_messages("q", record)[1]["content"].split("\n")[1])
+    payload = json.loads(_build_messages("q", record)[1]["content"].split("\n")[-1])
     [group] = payload
     assert (group["document_id"], group["document_date"]) == (DOC, "2025-11-24")
     assert [s["id"] for s in group["statements"]] == ["s1", "s2"]

@@ -62,7 +62,7 @@ what happened.
   Same variable name the backend reads: one name for the one artifact.
 - `EXTRACTION_NUM_CTX` — the context window passed to Ollama. Defaults to 32768; a whole
   document goes in one model call (D31), and a context too small to hold the document plus
-  its statements truncates the model's JSON mid-object and crashes the job (D36a) — raise
+  its statements truncates the model's JSON mid-object and crashes the job (D38) — raise
   this further before assuming a document is the problem.
 - `EXTRACTION_TIMEOUT` — per-request timeout in seconds. Defaults to 600.
 - `RECONCILED_FILE_PATH` — where the reconciled file is written, `/data/reconciled.json` in

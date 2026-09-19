@@ -293,7 +293,7 @@ def test_a_malformed_model_response_does_not_crash_the_whole_run(
     job: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """A truncated/invalid JSON response from the model (seen in production once a whole
-    document goes in one call — D31/D36a) must not take the rest of the corpus down with
+    document goes in one call — D31/D38) must not take the rest of the corpus down with
     it: the job keeps going and reports the bad document as empty, same as one that
     legitimately produced nothing."""
     other = job.parent / "corpus" / "transcripts" / "02_other.txt"
