@@ -5,15 +5,14 @@ The model never gets to assert a citation directly. It tags claims with brackete
 markers and, at the end of its reply, lists the statement ids those markers refer to. The
 backend then looks each id up in its own trusted copy of the statements file and builds
 the citation from that — never from text the model produced. An id the model invents, or
-mangles while decoding the base64 payload, simply resolves to nothing and is dropped. This
-is what CLAUDE.md means by "if code cannot guarantee [a citation], it must emit no
-citation rather than an approximate one" — see decisions.md D21.
+garbles in its own output, simply resolves to nothing and is dropped. This is what
+CLAUDE.md means by "if code cannot guarantee [a citation], it must emit no citation rather
+than an approximate one" — see decisions.md D21, D40.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import re
 from collections.abc import AsyncIterator
@@ -31,13 +30,14 @@ CITATION_DELIMITER = "===CITATIONS==="
 SYSTEM_PROMPT = f"""You are the answering agent for a rollout decision record.
 
 You will be given the complete set of statements extracted from a year of project \
-documents, base64-encoded under STATEMENTS_B64 as a JSON array grouped by document. Decode \
-it before answering. Each entry is one document, and has the document's id and date once, \
-plus a list of its statements. Each statement has an id, a claim (one plain sentence \
-saying what was stated), who said it (with their organisation), what kind of speech act it \
-is (proposal, agreement, decision, report, question, objection), and when it was said. \
-There is no verbatim quote and no line location on a statement — the claim is the only \
-record of what was said.
+documents, as a JSON array grouped by document under STATEMENTS_JSON. Each entry is one \
+document, and has the document's id and date once, plus a list of its statements. Each \
+statement has an id (the document's id plus its position in that document, e.g. \
+"workshop-notes-2026-03-12#1" — not a short code, copy it exactly, character for \
+character), a claim (one plain sentence saying what was stated), \
+who said it (with their organisation), what kind of speech act it is (proposal, agreement, \
+decision, report, question, objection), and when it was said. There is no verbatim quote \
+and no line location on a statement — the claim is the only record of what was said.
 
 Rules, no exceptions:
 1. Answer only from the statements given. Never use outside knowledge. If nothing in the \
@@ -55,8 +55,10 @@ order statements are first used, starting at 1. Reuse the same number for repeat
 the same statement.
 6. After the answer, on its own line, write exactly `{CITATION_DELIMITER}` followed by a \
 JSON array of the statement ids the markers refer to, in marker order, e.g. \
-["stmt-004", "stmt-011"]. If you used no markers, write an empty array []. Use only ids \
-that appear in the statements you were given — never invent one.
+["workshop-notes-2026-03-12#1", "email-thread-2026-07-05#3"]. Copy each id exactly as it \
+appears on the statement you are citing — never shorten it, renumber it, or make one up. \
+If you used no markers, write an empty array []. Use only ids that appear in the \
+statements you were given — never invent one.
 """
 
 
@@ -80,11 +82,10 @@ def _grouped_payload(statements: dict[str, Statement]) -> list[dict]:
 
 
 def _build_messages(question: str, statements: dict[str, Statement]) -> list[dict[str, str]]:
-    payload = json.dumps(_grouped_payload(statements))
-    encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
+    payload = json.dumps(_grouped_payload(statements), separators=(",", ":"))
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"STATEMENTS_B64:\n{encoded}\n\nQUESTION:\n{question}"},
+        {"role": "user", "content": f"QUESTION:\n{question}\n\nSTATEMENTS_JSON:\n{payload}"},
     ]
 
 
