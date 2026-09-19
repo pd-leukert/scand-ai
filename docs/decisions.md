@@ -382,8 +382,7 @@ Rejected:
   sees.
 
 *Cost:* three compose files to remember, until the job has run for real and the layers fold into
-`compose.yaml` and the placeholder command goes. The Dockerfile still defaults
-`STATEMENTS_PATH` to `statements.json` while the layer sets `.jsonl`. The `./corpus` bind mount
+`compose.yaml` and the placeholder command goes. The `./corpus` bind mount
 is our choice while D13's "external shared storage" is still undefined. A call that fails late
 loses the run, with no resume. And the prompt has not met a real model yet, so recall and the
 share of statements thrown away are both unknown.

@@ -39,7 +39,6 @@ services:
       OLLAMA_HOST: http://ollama:11434
       EXTRACTION_MODEL: ${EXTRACTION_MODEL:-}
       CORPUS_DIR: /corpus
-      STATEMENTS_PATH: /data/statements.jsonl
     volumes:
       - ./corpus:/corpus:ro
 

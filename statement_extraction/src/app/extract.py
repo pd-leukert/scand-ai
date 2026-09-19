@@ -60,13 +60,22 @@ def main(filters: list[str]) -> int:
         return 2
 
     records: list[dict] = []
+    empty: list[str] = []
     with httpx.Client(base_url=host, timeout=timeout) as client:
         chat = _ollama_chat(client, model, num_ctx)
         for doc in docs:
             found, dropped = extract_document(doc, chat, batch_words)
             records.extend(found)
+            if not found:
+                empty.append(doc.doc_id)
             note = f", dropped {dict(dropped)}" if dropped else ""
             print(f"{doc.doc_id}: {len(found)} statements{note}", flush=True)
+
+    # Nothing extracted must not look like a finished record: exit non-zero so compose holds
+    # the backend, and leave any earlier file alone.
+    if not records:
+        print("No statements were extracted, so nothing was written.", file=sys.stderr)
+        return 1
 
     # Written whole or not at all: a half-written file must never look like the record.
     tmp = out.with_name(out.name + ".tmp")
@@ -77,6 +86,10 @@ def main(filters: list[str]) -> int:
     os.replace(tmp, out)
     partial = f" (only {len(docs)} of {total} documents)" if len(docs) < total else ""
     print(f"Wrote {len(records)} statements to {out}{partial}")
+    if empty:
+        # A document with no statements is a silent gap in the record, so the job fails.
+        print(f"No statements from: {', '.join(empty)}", file=sys.stderr)
+        return 1
     return 0
 
 

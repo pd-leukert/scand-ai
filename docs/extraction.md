@@ -141,7 +141,7 @@ frontend until it finishes, which takes many hours without a GPU.
 | `EXTRACTION_NUM_CTX` | `8192` | Context window asked of Ollama. |
 | `EXTRACTION_TIMEOUT` | `600` | Seconds to wait for one model call. |
 | `CORPUS_DIR` | `corpus/` at the repo root | Where the documents are. Compose sets `/corpus`. |
-| `STATEMENTS_PATH` | `statements.jsonl` | Where the result is written. Compose sets `/data/statements.jsonl`. |
+| `STATEMENTS_PATH` | `statements.jsonl` | Where the result is written. The image sets `/data/statements.jsonl`. |
 
 ## Run it on Verda
 
@@ -181,6 +181,10 @@ The file lives in the `statements` volume. To read it:
 docker run --rm -v scand-ai_statements:/data alpine cat /data/statements.jsonl > statements.jsonl
 ```
 
+On Windows in Git Bash, put `MSYS_NO_PATHCONV=1` in front of `docker`. Git Bash otherwise rewrites
+`/data/...` into a path under `C:/Program Files/Git/` and the command silently reads nothing.
+PowerShell does not have this problem. The same command shows what a local Docker test run wrote.
+
 ### Pointing new changes at Verda
 
 Today this is manual:
@@ -198,8 +202,12 @@ the commands are the same, on `main`.
   downloaded model. Plain `down` keeps them.
 - **Every `docker compose up` re-runs extraction** (D12), which is long and costs GPU time. To
   restart just the backend: `docker compose up --no-deps backend`.
-- The Dockerfile still sets `STATEMENTS_PATH=/data/statements.json`; the extraction layer
-  overrides it to `.jsonl`. The backend does not read the file yet, so nothing depends on it.
+- **A filtered run overwrites the file.** Running one document writes a `statements.jsonl` with
+  only that document's statements, replacing a full one in the same place. Use `STATEMENTS_PATH`
+  to send test runs somewhere else.
+- **The job now fails on an empty result.** It exits non-zero if nothing was extracted (and
+  writes nothing), or if any document produced no statements (it writes the rest). Compose
+  then does not start the backend, which is intended.
 
 ## After the merge
 
