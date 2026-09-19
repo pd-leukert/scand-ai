@@ -73,6 +73,15 @@ frontend wait on it in turn.
   `current` with exit 0. **The thresholds are guesses until the first run on the real
   corpus**, and a run over one or two documents can trip the topic gate legitimately — set
   `RECONCILE_MAX_TOPICS=1` for a smoke run.
+- `RECONCILE_MAX_TOPIC_SHARE` — the share of all statements one topic may hold before the run
+  fails. Defaults to 0.5. The same failure from the other end: everything in one bucket finds
+  no real links either, because each reconciliation call is then shown unrelated statements.
+  A small run legitimately has one big topic — set it to 1 for a smoke run. See D33.
+- `RECONCILE_MAX_FLAGGED` — per topic, the share of statements a relation may put in
+  `never-true`, `stale` or `disputed` before the run fails. Defaults to 0.5. A model that
+  links each statement to the next one in the list flags nearly everything, and `corrects` is
+  not date-guarded, so nothing else rejects it. `unresolved` does not count towards this: it
+  comes from a proposal nobody answered, not from a link. See D33.
 
 These are deliberately separate from the backend's `LLM_BASE_URL`/`LLM_MODEL`: extraction
 and answering are allowed to use different models, and the working agreement says never to

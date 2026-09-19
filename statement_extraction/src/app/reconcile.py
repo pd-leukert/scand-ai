@@ -8,12 +8,22 @@ import re
 from collections import Counter
 from collections.abc import Callable
 
-from .extraction import Chat, when
+from .extraction import ACTS, Chat, when
 
 RELATIONS = ["supersedes", "corrects", "conflicts-with", "answers"]
 STATUSES = ["current", "stale", "never-true", "disputed", "unresolved"]
 PROBLEM_KINDS = ["reversal", "never-true", "conflict", "unanswered"]
 UNTAGGED = "untagged"
+
+# Topic names the model may not use. UNTAGGED is ours. The speech acts are here because they
+# are what a small model reaches for when it is asked to name a subject: "proposal" is a valid
+# slug, so nothing else rejects it, and a run comes back with every statement filed under its
+# own act. See D33.
+RESERVED_TOPICS = {UNTAGGED, *ACTS}
+
+# The statuses only a relation can produce. `unresolved` is not one: it falls out of a proposal
+# nobody answered, which is a property of one statement rather than a link between two.
+LINKED_STATUSES = {"never-true", "stale", "disputed"}
 
 # A topic is a short kebab-case slug. Letters may be non-ASCII: the archive has Swedish and
 # Danish in it, and a topic named in the language of its statements is not a wrong one.
@@ -24,6 +34,9 @@ SLUG_MAX = 40
 # Double quotes and guillemets only: an apostrophe is not a quotation.
 QUOTES = '"“”„«»'
 NOTE_MAX = 300
+
+# A number, with or without an internal separator: "60", "3.4", "1,200".
+NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
 TOPIC_SCHEMA = {
     "type": "object",
@@ -180,7 +193,7 @@ def tag_topics(
             {
                 "role": "user",
                 "content": f"{_vocabulary(use, vocabulary_shown)}\n\nStatements:\n"
-                f"{_render(labelled)}",
+                f"{_render(labelled, with_act=False)}",
             },
         ]
         tagged: dict[str, str] = {}
@@ -190,7 +203,7 @@ def tag_topics(
                 dropped["label not shown in this batch"] += 1
             elif topic is None:
                 dropped["topic is not a short slug"] += 1
-            elif topic == UNTAGGED:
+            elif topic in RESERVED_TOPICS:
                 dropped["reserved topic"] += 1
             elif label in tagged:
                 dropped["label tagged twice"] += 1
@@ -352,6 +365,8 @@ def reconcile(
     topic_cap: int,
     max_untagged: float,
     max_topics: float,
+    max_topic_share: float,
+    max_flagged: float,
     progress: Callable[[str], None] = print,
 ) -> tuple[list[dict], list[dict], Counter[str]]:
     """Topics, problems and everything thrown away, or a ReconcileError.
@@ -380,6 +395,18 @@ def reconcile(
             f"RECONCILE_MAX_TOPICS ({max_topics}) allows. The topics are too fragmented to "
             "link anything."
         )
+    # The opposite failure, and the one neither gate above can see: everything in one bucket.
+    # A topic holding the whole record is not a subject, and the call that reconciles it is
+    # shown unrelated statements and asked what they have to do with each other. See D33.
+    held = Counter(topic for topic in topics.values() if topic != UNTAGGED)
+    if held:
+        largest, size = held.most_common(1)[0]
+        if size > max_topic_share * len(records):
+            raise ReconcileError(
+                f"The topic {largest!r} holds {size} of {len(records)} statements, more than "
+                f"RECONCILE_MAX_TOPIC_SHARE ({max_topic_share}) allows. The statements are too "
+                "collapsed for a topic to name a subject."
+            )
 
     reconciled: list[dict] = []
     problems: list[dict] = []
@@ -397,6 +424,16 @@ def reconcile(
             f"{name}: {len(statements)} statements, {links} relations "
             f"({links / len(statements):.1f} each), statuses {dict(counts)}{note}"
         )
+        # A model that links each statement to the next one in the list flags nearly the whole
+        # topic, and `corrects` is deliberately not date-guarded (D31), so nothing else rejects
+        # it. Density was a review flag under D31; over this share it is a gate. See D33.
+        flagged = sum(1 for status in topic["statuses"].values() if status in LINKED_STATUSES)
+        if flagged > max_flagged * len(statements):
+            raise ReconcileError(
+                f"{name}: a relation flagged {flagged} of {len(statements)} statements, more "
+                f"than RECONCILE_MAX_FLAGGED ({max_flagged}) allows. Relations this dense are "
+                "a chain the model walked, not links it read."
+            )
     if untagged:
         # Nothing was reconciled here, so nothing can be said against these: they are current
         # only in the sense that no relation names them.
@@ -462,14 +499,21 @@ def _labelled(records: list[dict]) -> dict[str, dict]:
     return {f"S{number}": record for number, record in enumerate(records, 1)}
 
 
-def _render(labelled: dict[str, dict]) -> str:
+def _render(labelled: dict[str, dict], *, with_act: bool = True) -> str:
+    """The statements as the model sees them.
+
+    Stage A is shown no act. Asked to name a subject while looking at one, a small model copies
+    the column it was given, and every topic comes back named after a speech act (D33). Stage B
+    keeps it, because `unresolved` is defined on proposals and questions.
+    """
     lines = []
     for label, record in labelled.items():
         actor = record["actor"]
         who = actor["name"] or actor["label"] or "unknown speaker"
         org = f" ({actor['org']})" if actor["org"] else ""
         span = " ".join(record["span"].split())
-        lines.append(f"[{label}] {record['stated_on']} | {who}{org} | {record['act']} | {span}")
+        act = f"{record['act']} | " if with_act else ""
+        lines.append(f"[{label}] {record['stated_on']} | {who}{org} | {act}{span}")
     return "\n".join(lines)
 
 
@@ -525,6 +569,9 @@ def _summary(raw: dict, labelled: dict[str, dict], dropped: Counter[str]) -> dic
     if _quotes(text):
         dropped["summary contains a quotation"] += 1
         return None
+    if _invents_a_figure(text, labelled):
+        dropped["summary states a figure the topic does not"] += 1
+        return None
     receipts: list[str] = []
     for label in raw["statements"]:
         record = labelled.get(label)
@@ -557,6 +604,8 @@ def _problems(items: list[dict], labelled: dict[str, dict], dropped: Counter[str
             dropped["problem names no statement"] += 1
         elif not note or len(note) > NOTE_MAX or _quotes(note):
             dropped["problem note empty, too long or quoted"] += 1
+        elif _invents_a_figure(note, labelled):
+            dropped["problem note states a figure the topic does not"] += 1
         else:
             problems.append({"kind": item["kind"], "statements": ids, "note": note})
     return problems
@@ -576,3 +625,22 @@ def _supported(problem: dict, relations: list[dict], statuses: dict[str, str]) -
 
 def _quotes(text: str) -> bool:
     return any(mark in text for mark in QUOTES)
+
+
+def _figures(text: str) -> set[str]:
+    """The numbers in a piece of text, normalised on the separator so that 1,200 and 1.200 are
+    the same figure."""
+    return {match.group().replace(",", ".") for match in NUMBER.finditer(text)}
+
+
+def _invents_a_figure(text: str, labelled: dict[str, dict]) -> bool:
+    """Whether model prose states a number none of the topic's statements contain.
+
+    Numbers only, deliberately. A figure is the invention that does most damage in a derived
+    artifact — the archive is full of half-said percentages — and it needs no heuristic to
+    spot. Prose that contradicts the statuses, or says something false about a person in words
+    the record does contain, is not reachable from here; `KEEP_PROSE` in output.py is still the
+    answer to that one. See D33.
+    """
+    known = {f for record in labelled.values() for f in _figures(record["span"])}
+    return bool(_figures(text) - known)

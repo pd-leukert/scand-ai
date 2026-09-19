@@ -92,20 +92,31 @@ On a laptop that is all of it: no flags, no `.env`, CPU only, and a small model
 (`qwen3:0.6b`, ~520 MB) pulled automatically. Enough to prove the wiring end to end, and
 nothing at all about answer quality.
 
-The VM is the same command plus three environment variables, set once in Coolify:
+The VM is the same command plus four environment variables, set once in Coolify:
 
 ```
 OLLAMA_RUNTIME=nvidia                    # stock runtime ignores the GPU without this
 OLLAMA_DATA_DIR=/root/ollama-data        # bind the weights already on disk
 LLM_MODEL=qwen3.8:27b-mtp-bf16           # also drives extraction unless overridden
+OLLAMA_CONTEXT_LENGTH=131072             # the whole record goes in one prompt (D2)
 ```
 
-Set none of them and you get the laptop stack; set **all three** and you get the real one.
+Set none of them and you get the laptop stack; set **all four** and you get the real one.
 They are independent, so a partial set runs in a half-state rather than failing — a 27B
 model on CPU will crawl, not error, and a missing `OLLAMA_DATA_DIR` silently re-downloads
 tens of gigabytes it already has. The `ollama-pull` job prints the configuration it
-resolved and warns on both of those, so check the top of its deploy log
-([D26](docs/decisions.md)).
+resolved and warns on all of those, so check the top of its deploy log
+([D26](docs/decisions.md), [D34](docs/decisions.md)).
+
+**`OLLAMA_CONTEXT_LENGTH` is the one that decides whether the thing answers at all.** D2
+puts the entire reconciled record in every prompt, and the full 45-document corpus is well
+over 100k tokens, so the 16384 default holds a handful of documents and no more. Ollama
+truncates a prompt over its context without saying so, so the backend measures its own
+prompt against `LLM_NUM_CTX` (which defaults to whatever this is set to) and answers **413
+with both numbers** rather than answer from the part of the record that survived. A deploy
+that leaves this at the default comes up healthy and refuses every question — which is the
+intended behaviour, not a bug, but it is not a demo. Set it to what the model can actually
+serve, and remember the KV cache that buys: measure before the day.
 
 `OLLAMA_RUNTIME=nvidia` needs a *named* `nvidia` runtime registered with the Docker daemon.
 `docker run --gpus all` working does not prove that — `--gpus` takes a different code path.

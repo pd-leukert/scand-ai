@@ -65,6 +65,8 @@ def main(filters: list[str]) -> int:
     vocabulary_shown = int(os.environ.get("RECONCILE_VOCABULARY_SHOWN", "40"))
     max_untagged = float(os.environ.get("RECONCILE_MAX_UNTAGGED", "0.1"))
     max_topics = float(os.environ.get("RECONCILE_MAX_TOPICS", "0.35"))
+    max_topic_share = float(os.environ.get("RECONCILE_MAX_TOPIC_SHARE", "0.5"))
+    max_flagged = float(os.environ.get("RECONCILE_MAX_FLAGGED", "0.5"))
     reconciled_out = Path(os.environ.get("RECONCILED_FILE_PATH", "reconciled.json"))
 
     docs = load_corpus(corpus)
@@ -125,6 +127,8 @@ def main(filters: list[str]) -> int:
                 topic_cap=topic_cap,
                 max_untagged=max_untagged,
                 max_topics=max_topics,
+                max_topic_share=max_topic_share,
+                max_flagged=max_flagged,
                 progress=lambda line: print(line, flush=True),
             )
     except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError, ReconcileError) as error:
@@ -151,24 +155,30 @@ def main(filters: list[str]) -> int:
     return 0
 
 
-# Base64 tokenises badly. Measured on qwen3:0.6b: a 95 kB reconciled file became a 56k-token
-# prompt, about 2.3 characters a token, where prose is about 4.
-BASE64_CHARS_PER_TOKEN = 2.3
+# Bytes of reconciled.json per token of answering prompt. The file is not what is sent: the
+# backend drops fields it does not declare and re-serialises without the indentation, so this
+# folds the shrink and the tokenizer into one number. Measured end to end on qwen3:0.6b — a
+# 114 kB reconciled file became a 29,356-token prompt, or 3.9 bytes a token. Rounded down, so
+# the figure printed errs high: this number is read by whoever is choosing
+# OLLAMA_CONTEXT_LENGTH, and guessing that low is the failure D34 exists to stop.
+RECONCILED_BYTES_PER_TOKEN = 3.5
 
 
 def _size_report(statements_path: Path, reconciled_path: Path) -> str:
     """D2's ceiling is unmeasured until something measures it. The whole reconciled file goes
-    into the answering context, base64-encoded (D21), so report what that actually costs.
+    into the answering context as plain JSON (D34), so report what that actually costs — this
+    line is what OLLAMA_CONTEXT_LENGTH and LLM_NUM_CTX have to be set above.
 
-    Rough on purpose: the file's bytes include indentation and fields the backend never sends,
-    and another model's tokenizer will differ. It is the order of magnitude that decides whether
-    D2 holds, and Ollama truncates a prompt over its context silently."""
+    Rough on purpose: another model's tokenizer will differ, and the estimate deliberately errs
+    high. It is the order of magnitude that decides whether D2 holds, and Ollama truncates a
+    prompt over its context silently."""
     before, after = statements_path.stat().st_size, reconciled_path.stat().st_size
-    tokens = round(after * 4 / 3 / BASE64_CHARS_PER_TOKEN)
+    tokens = round(after / RECONCILED_BYTES_PER_TOKEN)
     return (
         f"{statements_path.name} {before // 1000} kB, {reconciled_path.name} {after // 1000} kB "
-        f"({(after - before) / before:+.0%}), about {tokens // 1000}k tokens once base64-encoded "
-        "into the answering context."
+        f"({(after - before) / before:+.0%}), about {tokens // 1000}k tokens in the answering "
+        f"context — set OLLAMA_CONTEXT_LENGTH and LLM_NUM_CTX above {tokens // 1000}k, or the "
+        "backend will refuse every question (D34)."
     )
 
 

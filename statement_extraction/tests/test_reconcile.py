@@ -17,6 +17,10 @@ SETTINGS = dict(
     topic_cap=40,
     max_untagged=0.1,
     max_topics=0.35,
+    # Off by default in these tests: most of them hand reconcile() two or three statements on
+    # one topic, which is exactly what the two gates are built to reject at corpus scale.
+    max_topic_share=1.0,
+    max_flagged=1.0,
     progress=lambda line: None,
 )
 
@@ -484,6 +488,49 @@ def test_a_topic_for_every_statement_stops_the_pass():
     assert chat.reconciled == []
 
 
+def test_one_topic_holding_most_of_the_record_stops_the_pass():
+    """The opposite of fragmentation, and the failure neither earlier gate can see: a run whose
+    every statement lands in one bucket. See D33."""
+    records = [record(n) for n in range(1, 11)]
+    chat = dispatching(["a"] * 9 + ["b"])
+    with pytest.raises(ReconcileError, match="collapsed"):
+        reconcile(records, chat, **SETTINGS | {"max_topic_share": 0.5})
+    assert chat.reconciled == []
+
+
+def test_exactly_the_allowed_topic_share_passes():
+    records = [record(n) for n in range(1, 11)]
+    chat = dispatching(["a"] * 5 + ["b"] * 5)
+    topics, _, _ = reconcile(records, chat, **SETTINGS | {"max_topic_share": 0.5})
+    assert sorted(t["topic"] for t in topics) == ["a", "b"]
+
+
+def test_a_relation_chain_that_flags_the_whole_topic_stops_the_pass():
+    """A model that links each statement to the next one in the list marks nearly everything
+    never-true, and `corrects` is not date-guarded, so nothing else rejects it. See D33."""
+    records = [record(n, stated_on=f"2025-01-{n:02d}") for n in range(1, 5)]
+    chain = [link(f"S{n + 1}", f"S{n}", "corrects") for n in range(1, 4)]
+    chat = dispatching(["a"] * 4, relations=chain)
+    with pytest.raises(ReconcileError, match="a chain the model walked"):
+        reconcile(records, chat, **SETTINGS | {"max_topics": 1.0, "max_flagged": 0.5})
+
+
+def test_a_topic_flagged_within_the_allowance_passes():
+    records = [record(n, stated_on=f"2025-01-{n:02d}") for n in range(1, 5)]
+    chat = dispatching(["a"] * 4, relations=[link("S2", "S1", "corrects")])
+    topics, _, _ = reconcile(records, chat, **SETTINGS | {"max_topics": 1.0, "max_flagged": 0.5})
+    assert sorted(topics[0]["statuses"].values()) == ["current", "current", "current", "never-true"]
+
+
+def test_unresolved_statements_do_not_count_towards_the_flagged_gate():
+    """`unresolved` is a property of one statement, not a link between two, so a topic of
+    unanswered proposals is not a chain and must not be refused as one."""
+    records = [record(n, "proposal") for n in range(1, 5)]
+    chat = dispatching(["a"] * 4)
+    topics, _, _ = reconcile(records, chat, **SETTINGS | {"max_topics": 1.0, "max_flagged": 0.5})
+    assert set(topics[0]["statuses"].values()) == {"unresolved"}
+
+
 def held(*statements: dict) -> dict:
     """A topic as reconcile_topic returns it, less the problems."""
     return {
@@ -545,3 +592,36 @@ def test_the_gate_stops_a_flagged_statement_no_problem_names():
     topic["statuses"][early["id"]] = "stale"
     with pytest.raises(ReconcileError, match="named in no problem"):
         _check([topic], [], [early, late])
+
+
+def test_a_summary_that_states_a_figure_the_topic_does_not_is_dropped():
+    """The highest-value invention in a derived artifact is a number: the archive is full of
+    half-said percentages, and a summary that completes one has invented a source. See D33."""
+    topic, dropped = run(
+        pair(), summary={"text": "Remediation is at 60 percent.", "statements": ["S1"]}
+    )
+    assert topic["summary"] is None
+    assert dropped == {"summary states a figure the topic does not": 1}
+
+
+def test_a_summary_may_repeat_a_figure_the_topic_does_contain():
+    statements = [record(1, span="Coverage is 82 percent."), record(2)]
+    topic, dropped = run(
+        statements, summary={"text": "Coverage stands at 82.", "statements": ["S1"]}
+    )
+    assert topic["summary"] == {"text": "Coverage stands at 82.", "statements": [f"{DOC}#1"]}
+    assert dropped == {}
+
+
+def test_a_problem_note_that_states_a_figure_the_topic_does_not_is_dropped():
+    topic, dropped = run(
+        pair(),
+        relations=[link("S2", "S1", "corrects")],
+        problems=[
+            {"kind": "never-true", "statements": ["S1", "S2"], "note": "It was 40 all along."}
+        ],
+    )
+    assert [p["note"] for p in topic["problems"]] == [
+        f"{DOC}#2 says {DOC}#1 was wrong when it was recorded."
+    ]
+    assert dropped["problem note states a figure the topic does not"] == 1

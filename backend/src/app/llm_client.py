@@ -5,7 +5,7 @@ The model never gets to assert a citation directly. It tags claims with brackete
 markers and, at the end of its reply, lists the statement ids those markers refer to. The
 backend then looks each id up in its own trusted copy of the reconciled file and builds
 the citation from that — never from text the model produced. An id the model invents, or
-mangles while decoding the base64 payload, simply resolves to nothing and is dropped. This
+mangles while copying it out of the record, simply resolves to nothing and is dropped. This
 is what CLAUDE.md means by "if code cannot guarantee [a citation], it must emit no
 citation rather than an approximate one" — see decisions.md D21. A statement's status, and
 the ids that justify it, are copied the same way: the model reads a currency, it never
@@ -19,7 +19,6 @@ currency is unknowable, and `status: null` on every citation.
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import re
 from collections.abc import AsyncIterator
@@ -37,8 +36,7 @@ CITATION_DELIMITER = "===CITATIONS==="
 SYSTEM_PROMPT = f"""You are the answering agent for a rollout decision record.
 
 You will be given the complete set of statements extracted from two years of project \
-documents, grouped by topic and base64-encoded as a JSON object under STATEMENTS_B64. \
-Decode it before answering. It has two lists.
+documents, grouped by topic, as a JSON object under STATEMENTS. It has two lists.
 
 topics: every statement is in exactly one topic. A topic has a summary (one sentence, which \
 may be missing), its relations, and its statements. Each statement has an id, the document \
@@ -92,8 +90,8 @@ that appear in the statements you were given — never invent one.
 STATEMENTS_ONLY_PROMPT = f"""You are the answering agent for a rollout decision record.
 
 You will be given the complete set of statements extracted from a year of project \
-documents, base64-encoded as a JSON array under STATEMENTS_B64. Decode it before \
-answering. Each statement has an id, the document it came from, a location inside that \
+documents, as a JSON array under STATEMENTS. Each statement has an id, the document it \
+came from, a location inside that \
 document, the verbatim text it was extracted from, who said it (with their organisation \
 and role at the time), who — if anyone — agreed to it, what kind of speech act it is \
 (proposal, agreement, decision, report, question, objection), and when it was said.
@@ -134,10 +132,11 @@ def _build_messages(question: str, record: Record) -> list[dict[str, str]]:
         # No status: every statement's default is "current", which nobody worked out here.
         statements = record.statements.values()
         payload = json.dumps([s.model_dump(mode="json", exclude={"status"}) for s in statements])
-    encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
+    # The record goes before the question so that the long half of the prompt is a stable
+    # prefix: Ollama caches it, and only the question is processed again on the next one.
     return [
         {"role": "system", "content": prompt},
-        {"role": "user", "content": f"STATEMENTS_B64:\n{encoded}\n\nQUESTION:\n{question}"},
+        {"role": "user", "content": f"STATEMENTS:\n{payload}\n\nQUESTION:\n{question}"},
     ]
 
 
@@ -177,6 +176,33 @@ def _resolve_citations(statement_ids: list[str], record: Record) -> list[Citatio
             )
         )
     return citations
+
+
+# Plain JSON of this record tokenises at roughly this many characters a token. Prose is about
+# four; the ids, field names and punctuation between the words drag it down. Measured on
+# qwen3:0.6b against the four-document record: 76k characters came to 29,356 prompt tokens, or
+# 2.59. Rounded down, not up, on purpose — a low divisor overestimates the tokens, and the cost
+# of overestimating is a question refused that would just have fitted, while the cost of
+# underestimating is an answer drawn from whichever part of the record survived truncation.
+# Another model's tokenizer will differ; this is the order of magnitude, not a promise.
+JSON_CHARS_PER_TOKEN = 2.5
+
+
+def context_shortfall(question: str) -> tuple[int, int] | None:
+    """(estimated prompt tokens, configured context) if the prompt will not fit, else None.
+
+    Ollama truncates a prompt over the served context silently, and its OpenAI-compatible
+    endpoint has no per-request `num_ctx` — the server's OLLAMA_CONTEXT_LENGTH decides. So the
+    backend cannot make the window bigger from here; it can only refuse to answer from a record
+    the model would only partly see. LLM_NUM_CTX is what the server is configured to serve, and
+    leaving it unset turns the guard off. See D34.
+    """
+    settings = get_settings()
+    if not settings.llm_num_ctx:
+        return None
+    chars = sum(len(message["content"]) for message in _build_messages(question, _load_record()))
+    tokens = round(chars / JSON_CHARS_PER_TOKEN)
+    return (tokens, settings.llm_num_ctx) if tokens > settings.llm_num_ctx else None
 
 
 def _load_record() -> Record:
@@ -245,7 +271,7 @@ async def answer_question(question: str) -> QueryResponse:
     payload = _request_payload(question, record, stream=False)
     url = f"{settings.llm_base_url}/chat/completions"
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
         response = await client.post(url, json=payload, headers=_headers())
         response.raise_for_status()
         body = response.json()
@@ -277,7 +303,7 @@ async def stream_answer_question(question: str) -> AsyncIterator[bytes]:
     delimiter_seen = False
     safety_margin = len(CITATION_DELIMITER) - 1
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
         async with client.stream("POST", url, json=payload, headers=_headers()) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():

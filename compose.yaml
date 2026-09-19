@@ -27,6 +27,12 @@ services:
       - OLLAMA_FLASH_ATTENTION=1
       - OLLAMA_KV_CACHE_TYPE=q8_0
       - OLLAMA_KEEP_ALIVE=30m
+      # The context every model is served with unless a request asks for its own. The
+      # OpenAI-compatible endpoint the backend uses cannot ask — `options.num_ctx` is ignored
+      # there — so this is the only thing standing between the answering path and a silently
+      # truncated record. Ollama's own default is 4096, which does not hold the record. Keep it
+      # equal to the backend's LLM_NUM_CTX below. See D34.
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-16384}
       # Only read when runtime is nvidia; inert under runc.
       - NVIDIA_VISIBLE_DEVICES=all
     healthcheck:
@@ -57,6 +63,7 @@ services:
       # deploy log instead of leaving it to be discovered later. See D26.
       - RESOLVED_RUNTIME=${OLLAMA_RUNTIME:-runc}
       - RESOLVED_STORE=${OLLAMA_DATA_DIR:-ollama-models (fresh named volume)}
+      - RESOLVED_CONTEXT=${OLLAMA_CONTEXT_LENGTH:-16384}
     entrypoint:
       - /bin/sh
       - -c
@@ -68,6 +75,7 @@ services:
         echo "   answering : $$ANSWERING_MODEL"
         echo "   extraction: $$EXTRACTION_MODEL"
         echo "   reconcile : $$RECONCILE_MODEL"
+        echo "   context   : $$RESOLVED_CONTEXT tokens"
         echo "=============================================================="
         case "$$RESOLVED_RUNTIME:$$RESOLVED_STORE" in
           nvidia:ollama-models*)
@@ -78,6 +86,17 @@ services:
           runc:*27b*|runc:*70b*|runc:*qwen3.8*)
             echo "WARNING: large model on the CPU runtime — set OLLAMA_RUNTIME=nvidia, or"
             echo "WARNING: this will be far too slow to demo." ;;
+        esac
+        # The whole reconciled record goes into one prompt (D2). The full 45-document corpus is
+        # well over 100k tokens, so the default context holds a few documents and no more — and
+        # the backend now refuses a question rather than answer from a truncated record (D34).
+        # A GPU box is the full-corpus shape, so say so there.
+        case "$$RESOLVED_RUNTIME:$$RESOLVED_CONTEXT" in
+          nvidia:16384)
+            echo "WARNING: OLLAMA_CONTEXT_LENGTH is still the 16384 default on a GPU box. The"
+            echo "WARNING: full corpus does not fit in that, and the backend will answer 413"
+            echo "WARNING: rather than answer from a record the model only partly saw. Set"
+            echo "WARNING: OLLAMA_CONTEXT_LENGTH to what this model can serve." ;;
         esac
         # Pulled here or it 404s in the middle of the longest job in the stack (D31).
         ollama pull "$$ANSWERING_MODEL" && ollama pull "$$EXTRACTION_MODEL" && ollama pull "$$RECONCILE_MODEL"
@@ -104,6 +123,15 @@ services:
       # want a different model from extraction. It defaults to the extraction model, which
       # defaults to the answering one (D31).
       - RECONCILE_LLM_MODEL=${RECONCILE_LLM_MODEL:-${EXTRACTION_LLM_MODEL:-${LLM_MODEL:-qwen3:0.6b}}}
+      # The reconciliation gates, passed through so they can be moved from Coolify without a
+      # code change. Each one fails the job rather than writing a record it does not believe,
+      # and a failed job holds the backend and frontend down with it — so on a first run over a
+      # corpus these have never seen, set them to 1 to watch the numbers, then tighten. The
+      # defaults are guesses; see D31 and D33 for what each is guarding against.
+      - RECONCILE_MAX_UNTAGGED=${RECONCILE_MAX_UNTAGGED:-0.1}
+      - RECONCILE_MAX_TOPICS=${RECONCILE_MAX_TOPICS:-0.35}
+      - RECONCILE_MAX_TOPIC_SHARE=${RECONCILE_MAX_TOPIC_SHARE:-0.5}
+      - RECONCILE_MAX_FLAGGED=${RECONCILE_MAX_FLAGGED:-0.5}
     # Never restart a job that has finished.
     restart: "no"
 
@@ -124,6 +152,19 @@ services:
     environment:
       - LLM_BASE_URL=http://ollama:11434/v1
       - LLM_MODEL=${LLM_MODEL:-qwen3:0.6b}
+      # What the ollama service above is serving, repeated here because the backend cannot ask
+      # it. It is not a request for a context — it is what the backend measures its own prompt
+      # against, so that a record too big for the model is refused rather than half-read. The
+      # two default together and have to be raised together. See D34.
+      - LLM_NUM_CTX=${OLLAMA_CONTEXT_LENGTH:-16384}
+      # One answer means processing the whole record as prompt, before the first token comes
+      # back. Measured on the laptop stack: about 17 tokens a second, so a record at the
+      # LLM_NUM_CTX default above takes roughly a quarter of an hour. The two defaults are set
+      # to agree — whatever the size guard admits, this allows time to finish, or the guard
+      # would pass a record only for the timeout to kill it. A GPU answers in seconds and never
+      # comes near this. The frontend waits a little longer than the backend, so what a caller
+      # sees is the backend's own 504 rather than a severed connection. See D34.
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-1800}
       # Which derived file the answering path reads: "reconciled" (the default, with a status
       # on each statement) or "statements" (the flat list, no currency information). Both are
       # on the volume. See D31.
@@ -162,6 +203,7 @@ services:
       - "8501"
     environment:
       - SERVICE_FQDN_FRONTEND_8501
+      - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-1860}
     restart: unless-stopped
 
 volumes:

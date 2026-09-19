@@ -1,3 +1,4 @@
+import pytest
 from src.app.reconcile import TOPIC_PROMPT, UNTAGGED, tag_topics
 
 DOC = "transcripts/07_2024-11-12_ordering-logic-design"
@@ -117,3 +118,19 @@ def test_the_model_is_never_shown_a_real_statement_id_or_a_document_name():
         assert "#" not in shown
     assert "[S1]" in chat.seen[0] and "[S2]" in chat.seen[0]
     assert "[S1]" in chat.seen[1] and "[S2]" not in chat.seen[1]  # labels restart each batch
+
+
+def test_the_tagger_is_never_shown_a_statements_speech_act():
+    """Asked to name a subject while looking at one, a small model copies the act and every
+    topic comes back called "proposal". Stage A is shown no act at all. See D33."""
+    chat = tagging([("S1", "ship-date")])
+    tag_topics([record(1)], chat, 20, 40)
+    assert "report" not in chat.seen[0]
+
+
+@pytest.mark.parametrize("reserved", ["proposal", "agreement", "decision", "question", "untagged"])
+def test_a_topic_named_after_a_speech_act_is_dropped(reserved: str):
+    chat = tagging([("S1", reserved)])
+    topics, dropped = tag_topics([record(1)], chat, 20, 40)
+    assert topics[f"{DOC}#1"] == UNTAGGED
+    assert dropped["reserved topic"] == 1

@@ -49,8 +49,12 @@ def job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("CORPUS_DIR", str(tmp_path / "corpus"))
     monkeypatch.setenv("STATEMENTS_FILE_PATH", str(tmp_path / "statements.json"))
     monkeypatch.setenv("RECONCILED_FILE_PATH", str(tmp_path / "reconciled.json"))
-    # One statement is one topic, which the fragmentation gate would rightly refuse.
+    # One statement is one topic, which the fragmentation gate would rightly refuse — and that
+    # one topic then holds the whole run, which the collapse gate would refuse for the same
+    # reason. Both are corpus-scale gates; a one-document job trips them legitimately.
     monkeypatch.setenv("RECONCILE_MAX_TOPICS", "1")
+    monkeypatch.setenv("RECONCILE_MAX_TOPIC_SHARE", "1")
+    monkeypatch.setenv("RECONCILE_MAX_FLAGGED", "1")
     monkeypatch.setattr(extract, "_ollama_chat", lambda *_: answering())
     return tmp_path / "statements.json"
 
@@ -181,7 +185,10 @@ def test_the_run_reports_what_the_reconciled_file_costs_in_context(
     assert extract.main([]) == 0
     printed = capsys.readouterr().out
     assert "statements.json" in printed and "reconciled.json" in printed
-    assert "tokens once base64-encoded into the answering context" in printed
+    # The line is what whoever sets OLLAMA_CONTEXT_LENGTH reads, so it names the variables
+    # rather than leaving the number to be acted on by someone who knows what it means (D34).
+    assert "tokens in the answering context" in printed
+    assert "OLLAMA_CONTEXT_LENGTH and LLM_NUM_CTX above" in printed
 
 
 def test_the_run_prints_the_problems_it_found(

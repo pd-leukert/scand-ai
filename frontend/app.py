@@ -9,7 +9,9 @@ import requests
 import streamlit as st
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
-REQUEST_TIMEOUT = 120
+# Seconds to wait on the backend. The whole record goes into the model's context, so the wait
+# is set by how big that record is and how fast the box is, not by this app. See D34.
+REQUEST_TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", "120"))
 
 DOC_LABEL_RE = re.compile(r"^(.*?)-\d{4}-\d{2}-\d{2}$")
 

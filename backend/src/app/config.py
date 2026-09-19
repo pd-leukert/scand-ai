@@ -19,6 +19,12 @@ class Settings:
     llm_base_url: str | None
     llm_model: str | None
     llm_api_key: str | None
+    # What the Ollama server is configured to serve, not something we can ask for per request:
+    # the OpenAI-compatible endpoint has no num_ctx. Unset turns the size guard off. See D34.
+    llm_num_ctx: int | None
+    # Seconds to wait on one answer. Prompt processing is linear in the size of the record, so
+    # the laptop stack needs far longer than a GPU does. See D34.
+    llm_timeout_seconds: float
     answer_source: Literal["reconciled", "statements"]
     statements_file: str
     reconciled_file: str
@@ -41,11 +47,17 @@ def get_settings() -> Settings:
         raise ConfigError(
             f"ANSWER_SOURCE must be 'reconciled' or 'statements', not {answer_source!r}"
         )
+    raw_num_ctx = os.environ.get("LLM_NUM_CTX", "").strip()
+    num_ctx = int(raw_num_ctx) if raw_num_ctx else None
+    if num_ctx is not None and num_ctx <= 0:
+        raise ConfigError(f"LLM_NUM_CTX must be a positive number of tokens, not {raw_num_ctx!r}")
     data = Path(__file__).parent / "data"
     return Settings(
         llm_base_url=base_url.rstrip("/") if base_url else None,
         llm_model=model,
         llm_api_key=os.environ.get("LLM_API_KEY"),
+        llm_num_ctx=num_ctx,
+        llm_timeout_seconds=float(os.environ.get("LLM_TIMEOUT", "120")),
         answer_source=answer_source,
         statements_file=os.environ.get("STATEMENTS_FILE_PATH", str(data / "mock_statements.json")),
         reconciled_file=os.environ.get("RECONCILED_FILE_PATH", str(data / "mock_reconciled.json")),

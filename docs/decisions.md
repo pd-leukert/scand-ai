@@ -1016,3 +1016,157 @@ Smaller calls made while building it, each with what it beat:
   oversized topic is cut into near-equal chunks rather than a full chunk and a stub, because a
   stub links to nothing; and a "quotation" in the model's prose is a double quote or a
   guillemet, not an apostrophe.
+
+---
+
+## D32 — 2026-09-19 — Accepted
+**The extraction pass is left exactly as it is. Everything below is the second pass and the
+answering path.**
+
+An end-to-end run of four documents on the laptop stack (`qwen3:0.6b`, CPU) produced an
+artifact that fails in ways worth writing down, and they divide cleanly. The first pass's
+failures are the model doing badly at a task the code states correctly: every speech act came
+back `proposal` (83 of 92; no `decision` at all, on a transcript containing the words "Then
+that is my decision"), 36 of 92 spans are filler under fifteen characters, 89 of 92 statements
+were marked `handling: personal`, and organisation and role fields picked up signature-block
+noise (`Account Executive [Image removed by sender]`, `relexsolutions.example`). Against that,
+the first pass's *guarantees* held: 115 of the 207 statements the model returned were rejected
+because their span was not in the unit verbatim, and nothing invented reached the file.
+
+So: those are prompt-and-model problems, and the evidence is that they are what a bigger model
+is for. Rewriting the extraction prompt against a 0.6b model's mistakes would tune it for a
+model we do not ship. The second pass's failures are different in kind — they are places where
+code accepted something no model should have been able to get past it — and those are D33.
+
+*Cost:* the extraction quality numbers above are unverified against the VM model, and if they
+survive at 27B then the first pass needs the work after all. The four-document run is the test
+to repeat; it takes about twelve minutes.
+
+Rejected: fixing both layers now. The first-pass changes would be guesses, and a guess in the
+one file whose output every other file is derived from is the expensive kind.
+
+---
+
+## D33 — 2026-09-19 — Accepted *(extends D31)*
+**Three new gates on the reconciliation pass, and the topic tagger is no longer shown a
+statement's speech act.**
+
+D31 built the second pass and validated everything the model returns against the statements it
+was given. The four-document run (D32) got past all of it and produced an artifact that was
+structurally perfect and semantically worthless: 92 statements in 3 topics named `proposal`,
+`agreement` and `report`, 27 of the 33 relations a single `corrects` chain running
+`#1→#2→#3→…` down the list, and 27 statements labelled `never-true` including one whose whole
+verbatim span is `Yeah.`. `_check` passed it. The job exited 0.
+
+Each gate answers one of those.
+
+- **The topic tagger is shown no speech act.** `_render` put `| {act} |` in every line, and the
+  model asked to name a subject copied the column it was looking at. The prompt already said
+  "Name the subject, never the speech act"; the fix is to stop showing it the act rather than
+  to ask again more firmly. Stage B still sees it, because `unresolved` is defined on proposals
+  and questions. Rejected: prompt-only. The instruction was already there and already ignored.
+- **The speech-act names are reserved topics**, alongside `untagged`. `proposal` is a valid
+  kebab-case slug, so `_slug` had no reason to refuse it. Belt and braces with the above: the
+  render fix removes the temptation, this one removes the possibility.
+- **`RECONCILE_MAX_TOPIC_SHARE` (0.5)** — no single topic may hold more than half the run's
+  statements. D31 gated fragmentation (`RECONCILE_MAX_TOPICS`) because a grouping where no
+  topic holds two statements finds no links and reports the whole record `current`. Total
+  collapse is the same failure from the other end: one topic held 84 of 92 statements, was cut
+  into three chunks of 28 by `RECONCILE_TOPIC_MAX`, and each chunk showed the model 28
+  unrelated statements and asked what they had to do with each other.
+- **`RECONCILE_MAX_FLAGGED` (0.5)** — per topic, the share of statements a relation may put in
+  `never-true`, `stale` or `disputed`. This is the one that catches the chain. D31 deliberately
+  left `corrects` without the date guard it gave `supersedes`, on the reasoning that a
+  statement can show a record was never right without being dated after it — which is correct,
+  and which also means `corrects` has no guard at all, while producing the *more* severe label.
+  A density gate is relation-kind-agnostic and catches the degenerate shape directly. D31 called
+  density "a review flag, not a gate"; over half a topic it is now a gate. `unresolved` is
+  excluded from the count deliberately: it falls out of a proposal nobody answered, which is a
+  property of one statement rather than a link, and a topic of open proposals is not a chain.
+- **Model prose may not state a figure the topic's statements do not contain.** Applies to
+  topic summaries and problem notes. The archive is full of half-said numbers — the practice
+  questions warn that "an agent that completes the sentence for them has invented a source" —
+  and a figure needs no heuristic to spot.
+
+All four `RECONCILE_MAX_*` gates are passed through `compose.yaml` so they can be moved from
+Coolify without a code change. They were not before this entry, which made the two that already
+existed untunable on the VM.
+
+*Cost:* four of the five gates can refuse a legitimate run. A genuinely contested topic is
+dense, a small corpus legitimately has one big topic, and a real subject could be called
+`report`. All are configurable, and a run over one or two documents should expect to loosen
+them exactly as it already loosens `RECONCILE_MAX_TOPICS`. Three gates now fail the whole job
+rather than dropping what tripped them, which is consistent with D31 — a half-reconciled record
+is worse than none — but it means one bad topic costs the whole twelve-minute run.
+
+**What is still not checked, and cannot be from here.** A summary that contradicts the statuses
+its own topic carries. The run produced `All statements are current, correct, or have been
+resolved. No conflicts or disputes are present.` on the topic with 26 `never-true` in it, and
+`The report states that Ana Duarte (relexsolutions.example) improved the plan, sold more, and
+reduced waste.` on a topic whose single statement is a marketing footer — a fabricated claim
+about a named person, in prose, which is exactly what CLAUDE.md rule 4 says no span match will
+find. Code can check that prose cites real ids, carries no quotation and invents no figure. It
+cannot check that prose is true. `KEEP_PROSE = False` in `output.py` remains the answer if that
+risk is not acceptable by Sunday.
+
+---
+
+## D34 — 2026-09-19 — Accepted *(supersedes D21's base64 encoding, not its trust boundary)*
+**The record goes into the answering prompt as plain JSON, not base64. The context the model is
+served is configuration, and a record that does not fit is refused rather than truncated.**
+
+The four-document run answered *"Yes, bakery is inside the fresh Phase 2 go-live"* — the
+opposite of what the record says — with zero citations, naming a "Product Manager" who does not
+appear anywhere in the archive. Three separate causes, all in the answering path.
+
+- **Ollama served 4,096 tokens against a 100,363-character prompt.** The backend sent no
+  context setting at all, so the server default applied and the rest was discarded silently.
+  This is not something the backend can fix per request: its OpenAI-compatible endpoint ignores
+  `options.num_ctx` (verified on Ollama 0.34.2 — identical `n_ctx_slot` with and without it).
+  The context is therefore set on the server, `OLLAMA_CONTEXT_LENGTH` on the `ollama` service,
+  and `LLM_NUM_CTX` tells the backend what that number is. Rejected: moving the backend onto
+  Ollama's native `/api/chat`, which does take `num_ctx` — it would also mean rewriting the SSE
+  streaming parser for a different wire format, and pinning the answering path to one vendor
+  for a value an environment variable already sets.
+- **`LLM_NUM_CTX` is a guard, not a request.** The backend measures its own prompt and returns
+  413 with the two numbers and what to do about them, rather than letting the model answer from
+  whichever part of the record survived. Checked in the route, before the `StreamingResponse`
+  is returned, because once a stream has started there is no status left to set. Unset turns
+  the guard off. This is CLAUDE.md's "it fails honestly": an answer from a truncated record is
+  not an answer from the record, and it is indistinguishable from a good one.
+- **Base64 goes.** D21 encoded the payload so the model could not lift citation text straight
+  out of it. The actual guarantee was never the encoding — it is `_resolve_citations` looking
+  every id up in our own copy of the file, which is untouched and works identically on plain
+  JSON. What base64 did buy was measured: with it, `qwen3:0.6b` answered "The record does not
+  say." and cited nothing; with plain JSON, the same record and the same question, it cited six
+  real statements with their statuses. And it costs roughly double, because base64 both inflates
+  by 4/3 and tokenises at about 2.3 characters a token where JSON manages about 3.3 — the
+  four-document record is ~23k tokens encoded against ~12k plain, and the full corpus is
+  ~240k against ~126k. D21's trust boundary stands; only its encoding is superseded.
+- **The two hard-coded 120-second timeouts are configuration** (`LLM_TIMEOUT`,
+  `REQUEST_TIMEOUT`). Processing the record as prompt is linear in its size; on the laptop's CPU
+  a 25k-token record takes longer than two minutes, and the run above failed on the timeout
+  rather than on anything to do with the answer. The frontend waits slightly longer than the
+  backend, so what a caller sees is the backend's own timeout rather than a severed connection.
+  A timeout is now a 504 naming `LLM_TIMEOUT` and saying why, not a 500 and a traceback.
+- **The timeout default and the size guard are set to agree.** Measured: the laptop stack
+  processes prompt at about 17 tokens a second, so a record at the 16384 default takes roughly
+  a quarter of an hour, and the first draft of this entry shipped `LLM_TIMEOUT=600` — a guard
+  that admits records the timeout then kills. 1800 is what 16384 tokens costs on a slow CPU
+  with headroom. On a GPU this is never approached. Raise `OLLAMA_CONTEXT_LENGTH` without
+  raising `LLM_TIMEOUT` and the pair goes back out of step, which is the same class of mistake
+  as the two context variables and has the same answer: the `ollama-pull` banner prints what
+  was resolved.
+
+*Cost:* `OLLAMA_CONTEXT_LENGTH` and `LLM_NUM_CTX` are two variables that have to be raised
+together and nothing enforces it — set the guard above what the server serves and the truncation
+comes back, silently, which is the failure this entry exists to remove. The token estimate is
+characters ÷ 2.5, measured on `qwen3:0.6b` (76k characters of this record came to 29,356 prompt
+tokens, or 2.59) and rounded down so the guard errs towards refusing. Another tokenizer will
+differ, so it will sometimes refuse a record that would just have fitted. A bigger context also costs KV
+cache, which on a 27B model at long context is a GPU memory question this entry does not answer.
+
+**The number this does not fix.** ~126k tokens for the full 45-document corpus, as plain JSON,
+on a clean artifact. That needs a model serving 128k and the memory to back it, and D2 — the
+whole record in context, no retrieval — is riding on it. The four-document record is 25,371
+tokens by the backend's own estimate. Measure the VM model before committing to no retrieval.

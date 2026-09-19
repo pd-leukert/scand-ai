@@ -28,6 +28,18 @@ Run with `uv run fastapi dev` from the `backend` folder.
 Optional:
 
 - `LLM_API_KEY` — sent as `Authorization: Bearer ...` if set. Ollama doesn't need one.
+- `LLM_NUM_CTX` — how many tokens the Ollama server is configured to serve, i.e. whatever
+  `OLLAMA_CONTEXT_LENGTH` is set to on the `ollama` service. This does **not** ask for a
+  context: Ollama's OpenAI-compatible endpoint ignores `options.num_ctx`, so the server is the
+  only place that number can be set. It is what the backend measures its own prompt against —
+  over it, `/query` returns 413 saying so instead of letting Ollama truncate the record
+  silently and answer from the part it kept. Unset turns the guard off. Raise this and
+  `OLLAMA_CONTEXT_LENGTH` together or it protects nothing. See D34.
+- `LLM_TIMEOUT` — seconds to wait on one answer, default 120. The whole record is processed as
+  prompt before the first token, so the wait scales with the record and with the box: compose
+  sets 1800, which is what a record at the default `LLM_NUM_CTX` costs on a laptop CPU
+  (measured at about 17 tokens a second). Over it, `/query` returns 504 naming this variable
+  rather than a bare 500. Raise it whenever you raise `OLLAMA_CONTEXT_LENGTH`. See D34.
 - `ANSWER_SOURCE` — which derived file to answer from: `reconciled` (the default) or
   `statements`. Read at startup, so changing it means restarting the backend. In `statements`
   mode the backend behaves as it did before D31: the model gets the flat list under the
